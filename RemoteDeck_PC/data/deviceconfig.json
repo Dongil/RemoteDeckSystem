@@ -1,0 +1,51 @@
+{
+  "device_id": "node_1",
+  "product": "RemoteDeck_PC",
+  "network": {
+    "mode": "ethernet",
+    "ethernet": {
+      "dhcp": false,
+      "ip": "192.168.1.200",
+      "gateway": "192.168.1.1",
+      "subnet": "255.255.255.0",
+      "dns1": "8.8.8.8",
+      "dns2": "8.8.4.4",
+      "mac": ""
+    },
+    "wifi": {
+      "ssid": "",
+      "password": "",
+      "dhcp": true,
+      "mac": ""
+    }
+  },
+  "mqtt": {
+    "broker": "",
+    "port": 1883,
+    "user": "",
+    "password": "",
+    "keepalive": 120,
+    "topic_pub": "RemoteDeck/server",
+    "topic_sub": "RemoteDeck/[device_id]",
+    "topic_ping": "RemoteDeck/ping"
+  },
+  "relay": {
+    "pulse_short_ms": 500,
+    "pulse_long_ms": 5000
+  },
+  "monitor": {
+    "pcled_poll_interval_ms": 1000,
+    "auto_notify": true
+  },
+  "wol": {
+    "target_mac": ""
+  },
+  "ntp": {
+    "server": "pool.ntp.org",
+    "timezone": "KST-9"
+  },
+  "firmware": {
+    "version": "2.0.0",
+    "date": "2026-04-06"
+  }
+}

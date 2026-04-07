@@ -1,0 +1,26 @@
+# PlatformIO
+RemoteDeck_PC/.pio/
+RemoteDeck_PC/.vscode/
+
+# .NET
+IPSetupTool/**/bin/
+IPSetupTool/**/obj/
+IPSetupTool/publish/
+
+# Logs
+*.log
+discovery_log.txt
+network_log.txt
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+*.suo
+*.user
+
+# bkit
+.bkit/

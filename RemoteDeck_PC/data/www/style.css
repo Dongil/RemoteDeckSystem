@@ -1,0 +1,37 @@
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;font-size:14px}
+header{background:#16213e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:16px;color:#0ff}
+header span{font-size:12px;color:#888}
+nav{display:flex;background:#0f3460;overflow-x:auto}
+nav button{flex:1;padding:10px;background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;white-space:nowrap}
+nav button.active{color:#0ff;border-bottom:2px solid #0ff}
+.page{display:none;padding:12px}
+.page.active{display:block}
+.card-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.card-row{grid-template-columns:1fr}}
+.card{background:#16213e;border-radius:8px;padding:16px;margin-bottom:12px}
+.card h2{font-size:14px;color:#0ff;margin-bottom:10px;border-bottom:1px solid #333;padding-bottom:6px}
+.card h3{font-size:13px;color:#aaa;margin:12px 0 8px}
+.status-indicator{display:flex;align-items:center;gap:10px;font-size:20px;margin:10px 0}
+.dot{width:16px;height:16px;border-radius:50%;background:#555}
+.dot.on{background:#0f0}
+.dot.off{background:#f00}
+.status-line{padding:4px 0;font-size:13px}
+.status-line span{color:#0ff}
+.btn-group{display:flex;gap:8px;margin:8px 0}
+.btn-group button,button{padding:8px 16px;background:#0f3460;border:1px solid #0ff;color:#0ff;border-radius:4px;cursor:pointer;font-size:13px}
+button:hover{background:#1a5276}
+input[type="text"],input[type="number"],input[type="time"],select{
+  background:#0a0e27;border:1px solid #333;color:#e0e0e0;padding:8px;border-radius:4px;margin:4px 0;font-size:13px;width:100%;max-width:300px}
+input[type="file"]{margin:8px 0;color:#aaa}
+.form-row{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;align-items:center}
+.form-row label{font-size:12px;display:flex;align-items:center;gap:4px}
+.progress-bar{background:#333;border-radius:4px;height:20px;margin:10px 0;overflow:hidden}
+.progress-fill{background:#0ff;height:100%;width:0%;transition:width .3s}
+.log-container{max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px}
+.log-entry{padding:3px 0;border-bottom:1px solid #222}
+.log-entry .time{color:#888}
+.log-entry .event{color:#0ff}
+#config-form .cfg-group{margin:10px 0}
+#config-form label{display:block;font-size:12px;color:#888;margin:6px 0 2px}
