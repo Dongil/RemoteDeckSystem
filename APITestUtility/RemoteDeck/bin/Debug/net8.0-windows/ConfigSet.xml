@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ConfigSet xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <IP>mqtt.xenoglobal.co.kr</IP>
+  <Port>1883</Port>
+  <Publish>RemoteDeck/node_1</Publish>
+  <Subscribe>RemoteDeck/client</Subscribe>
+</ConfigSet>

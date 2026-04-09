@@ -102,6 +102,7 @@ bool onUDPConfig(const char* jsonConfig) {
 
     // Update fields that are present
     if (doc.containsKey("device_id")) config.deviceId = doc["device_id"].as<std::string>();
+    if (doc.containsKey("device_name")) config.deviceName = doc["device_name"].as<std::string>();
     if (doc.containsKey("network")) {
         JsonObject net = doc["network"];
         if (net.containsKey("mode")) config.network.mode = net["mode"].as<std::string>();
@@ -116,6 +117,10 @@ bool onUDPConfig(const char* jsonConfig) {
             if (net["wifi"].containsKey("ssid")) config.network.wifiSsid = net["wifi"]["ssid"].as<std::string>();
             if (net["wifi"].containsKey("password")) config.network.wifiPassword = net["wifi"]["password"].as<std::string>();
             config.network.wifiDhcp = net["wifi"]["dhcp"] | config.network.wifiDhcp;
+            if (net["wifi"].containsKey("ip")) config.network.wifiIp = net["wifi"]["ip"].as<std::string>();
+            if (net["wifi"].containsKey("gateway")) config.network.wifiGateway = net["wifi"]["gateway"].as<std::string>();
+            if (net["wifi"].containsKey("subnet")) config.network.wifiSubnet = net["wifi"]["subnet"].as<std::string>();
+            if (net["wifi"].containsKey("dns1")) config.network.wifiDns1 = net["wifi"]["dns1"].as<std::string>();
         }
     }
     if (doc.containsKey("mqtt")) {
@@ -169,15 +174,11 @@ void processCommand(const CommandConfig& cmd, const char* source) {
             wolSender.sendDefault();
         }
 
-    } else if (cmd.command == "WIFION") {
-        // WiFi AP is always on in this firmware
-        StatusConfig status(config.deviceId, "WIFION", 1, 1,
-                            networkManager.wifiAPIP().toString().c_str());
-        sendStatus(status);
-
-    } else if (cmd.command == "WIFIOFF") {
-        // WiFi AP cannot be turned off (used for Web UI)
-        StatusConfig status(config.deviceId, "WIFIOFF", 1, 0, "");
+    } else if (cmd.command == "WIFION" || cmd.command == "WIFIOFF") {
+        // v2.1: network mode is fixed by config, report current state
+        bool connected = networkManager.isConnected();
+        StatusConfig status(config.deviceId, connected ? "WIFION" : "WIFIOFF", 1,
+                            connected ? 1 : 0, networkManager.localIP().toString().c_str());
         sendStatus(status);
 
     } else if (cmd.command == "REBOOT") {
@@ -223,7 +224,7 @@ void sendStatus(const StatusConfig& status) {
 void sendFullStatus() {
     // Part 1: ONLINE + PCLED
     StatusConfig s1(config.deviceId, getStatus("ONLINE", 1),
-                    networkManager.ethernetIP().toString().c_str());
+                    networkManager.localIP().toString().c_str());
     s1.addStatus(getStatus("PCLED", 1));
     sendStatus(s1);
 
@@ -249,13 +250,11 @@ String buildStatusJson() {
     gpio.add(digitalRead(PIN_GPIO2));
     gpio.add(digitalRead(PIN_GPIO3));
     doc["uptime"] = ntpSync.getUptime();
-    doc["eth_ip"] = networkManager.ethernetIP().toString();
-    doc["ap_ip"] = networkManager.wifiAPIP().toString();
-    doc["ap_ssid"] = networkManager.getAPSSID();
-    doc["ip"] = networkManager.isEthernetConnected() ?
-                networkManager.ethernetIP().toString() : networkManager.wifiAPIP().toString();
-    doc["mac"] = networkManager.ethernetMAC();
+    doc["ip"] = networkManager.localIP().toString();
+    doc["mac"] = networkManager.macAddress();
+    doc["net_mode"] = networkManager.activeMode() == NetMode::ETHERNET ? "ethernet" : "wifi";
     doc["fw_ver"] = config.firmware.version;
+    doc["device_name"] = config.deviceName;
     doc["ntp_synced"] = ntpSync.isSynced();
     doc["time"] = ntpSync.getTimeString();
     doc["mqtt_connected"] = mqttHandler.isConnected();
@@ -268,6 +267,7 @@ String buildStatusJson() {
 String buildConfigJson() {
     StaticJsonDocument<2048> doc;
     doc["device_id"] = config.deviceId;
+    doc["device_name"] = config.deviceName;
     doc["product"] = config.product;
 
     JsonObject net = doc.createNestedObject("network");
@@ -282,8 +282,12 @@ String buildConfigJson() {
     JsonObject wifi = net.createNestedObject("wifi");
     wifi["ssid"] = config.network.wifiSsid;
     wifi["dhcp"] = config.network.wifiDhcp;
+    wifi["ip"] = config.network.wifiIp;
+    wifi["gateway"] = config.network.wifiGateway;
+    wifi["subnet"] = config.network.wifiSubnet;
+    wifi["dns1"] = config.network.wifiDns1;
     wifi["mac"] = config.network.wifiMac;
-    // password intentionally omitted
+    wifi["password"] = config.network.wifiPassword;  // IPSetupTool needs this
 
     JsonObject mq = doc.createNestedObject("mqtt");
     mq["broker"] = config.mqtt.broker;
@@ -311,6 +315,9 @@ String buildConfigJson() {
     JsonObject fw = doc.createNestedObject("firmware");
     fw["version"] = config.firmware.version;
     fw["date"] = config.firmware.date;
+
+    // Auth (user only, password masked)
+    doc["auth_user"] = config.auth.user;
 
     String output;
     serializeJson(doc, output);
@@ -379,26 +386,42 @@ void setup() {
     pinMode(PIN_GPIO3, INPUT);
     // STATUS1/2 already initialized above (before factory reset check)
 
-    // Network: Ethernet2 + WiFi AP
-    networkManager.begin(config.network, config.deviceId);
+    // Network v2.1: single mode (ethernet OR wifi STA), non-blocking
+    networkManager.setOnConnected([]() {
+        Serial.println("=== Network connected - starting services ===");
 
-    // MQTT via Ethernet
-    if (networkManager.isEthernetConnected() && !config.mqtt.broker.empty()) {
-        Client& netClient = networkManager.getEthClient();
-        mqttHandler.begin(config.mqtt, config.deviceId, netClient);
-    }
+        // MQTT
+        if (!config.mqtt.broker.empty()) {
+            mqttHandler.begin(config.mqtt, config.deviceId, networkManager.getNetClient());
+        }
 
-    // NTP (via WiFi AP - will work if AP has internet, otherwise skipped)
-    ntpSync.begin(config.ntp.server.c_str(), config.ntp.timezone.c_str());
+        // NTP
+        ntpSync.begin(config.ntp.server.c_str(), config.ntp.timezone.c_str());
+
+        // ONLINE status via MQTT
+        StatusConfig online(config.deviceId, "ONLINE", 1, 1,
+                            networkManager.localIP().toString().c_str());
+        mqttHandler.publishStatus(online);
+
+        logger.log("NETWORK", networkManager.activeMode() == NetMode::ETHERNET ?
+                   "Ethernet connected" : "WiFi connected");
+    });
+    networkManager.begin(config.network);
 
     // Logger NTP time getter
     logger.setNTPTimeGetter([]() -> String { return String(ntpSync.getTimeString().c_str()); });
 
-    // UDP Discovery
+    // UDP Discovery (with auth)
     udpDiscovery.begin(UDP_DISC_PORT, &config);
+    udpDiscovery.setAuth(&config.auth);
     udpDiscovery.setOnConfigRequest(onUDPConfig);
     udpDiscovery.setOnRebootRequest(onUDPReboot);
     udpDiscovery.setOnGetConfig(buildConfigJson);
+    udpDiscovery.setOnChangeAuth([](const char* newUser, const char* newPass) {
+        config.auth.user = newUser;
+        config.auth.pass = newPass;
+        return ConfigManager::save(config);
+    });
 
     // WOL
     wolSender.setDefaultMac(config.wol.targetMac);
@@ -456,10 +479,16 @@ void setup() {
         ESP.restart();
     });
     webServer.setLogGetter([]() { return logger.toJson(); });
+    webServer.setAuthChanger([](const String& curPass, const String& newUser, const String& newPass) {
+        if (curPass != String(config.auth.pass.c_str())) return false;
+        config.auth.user = newUser.c_str();
+        config.auth.pass = newPass.c_str();
+        return ConfigManager::save(config);
+    });
     webServer.ota().setOnProgress([](uint8_t pct) {
         webServer.ws().broadcastOTAProgress(pct);
     });
-    webServer.begin(WEB_PORT);
+    webServer.begin(WEB_PORT, &config.auth);
 
     // Send ONLINE status via RS485
     StatusConfig onlineStatus(config.deviceId, "ONLINE", 0, 0, "null");
@@ -468,19 +497,24 @@ void setup() {
         rs485Handler.send(json.c_str());
     }
 
-    if (networkManager.isEthernetConnected()) {
+    if (networkManager.isConnected()) {
         digitalWrite(PIN_STATUS1, HIGH);
     }
 
     logger.log("SYSTEM", "Boot complete");
-    Serial.println("=== RemoteDeck PC Power Manager v2.0 ===");
-    Serial.printf("    ETH: %s\n", networkManager.isEthernetConnected() ?
-                  networkManager.ethernetIP().toString().c_str() : "Not connected");
-    Serial.printf("    WiFi AP: %s (SSID: %s, PW: remotedeck)\n",
-                  networkManager.wifiAPIP().toString().c_str(),
-                  networkManager.getAPSSID().c_str());
-    Serial.printf("    Web UI: http://%s:%d\n",
-                  networkManager.wifiAPIP().toString().c_str(), WEB_PORT);
+    Serial.println("=== RemoteDeck PC Power Manager v2.1 ===");
+    Serial.printf("    Mode: %s\n", config.network.mode.c_str());
+    if (networkManager.isConnected()) {
+        Serial.printf("    Primary IP: %s\n", networkManager.localIP().toString().c_str());
+        Serial.printf("    Web UI: http://%s:%d\n",
+                      networkManager.localIP().toString().c_str(), WEB_PORT);
+    } else {
+        Serial.println("    Waiting for primary network...");
+    }
+    if (networkManager.isEthManagementActive()) {
+        Serial.printf("    ETH Management: %s (IPSetupTool)\n",
+                      networkManager.ethManagementIP().toString().c_str());
+    }
 }
 
 // ─── Loop ───────────────────────────────────────────

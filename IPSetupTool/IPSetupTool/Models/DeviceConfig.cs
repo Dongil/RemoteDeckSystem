@@ -7,6 +7,9 @@ public class DeviceConfigRoot
     [JsonPropertyName("device_id")]
     public string DeviceId { get; set; } = "node_1";
 
+    [JsonPropertyName("device_name")]
+    public string? DeviceName { get; set; } = "새기기";
+
     [JsonPropertyName("product")]
     public string Product { get; set; } = "RemoteDeck_PC";
 
@@ -78,6 +81,18 @@ public class WifiConfig
 
     [JsonPropertyName("dhcp")]
     public bool Dhcp { get; set; } = true;
+
+    [JsonPropertyName("ip")]
+    public string IP { get; set; } = "";
+
+    [JsonPropertyName("gateway")]
+    public string Gateway { get; set; } = "";
+
+    [JsonPropertyName("subnet")]
+    public string Subnet { get; set; } = "255.255.255.0";
+
+    [JsonPropertyName("dns1")]
+    public string Dns1 { get; set; } = "8.8.8.8";
 
     [JsonPropertyName("mac")]
     public string MAC { get; set; } = "";

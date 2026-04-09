@@ -51,7 +51,11 @@ function updateDashboard(d) {
   document.getElementById('ntp-time').textContent = d.time || '--';
   document.getElementById('fw-ver').textContent = 'v' + (d.fw_ver || '--');
   document.getElementById('ota-ver').textContent = d.fw_ver || '--';
-  if (d.fw_ver) document.getElementById('dev-id').textContent = d.ip ? d.ip : '--';
+  if (d.device_name) {
+    document.getElementById('dev-name').textContent = d.device_name;
+    document.getElementById('device-name-header').textContent = d.device_name;
+  }
+  if (d.ip) document.getElementById('dev-id').textContent = d.ip;
 }
 
 // Initial load
@@ -187,6 +191,34 @@ function saveConfig() {
   }).then(() => {
     alert('저장 완료! 장치가 재부팅됩니다.');
     setTimeout(() => location.reload(), 5000);
+  });
+}
+
+// Account Change (ID + PW)
+function changeAccount() {
+  const curPw = document.getElementById('cur-pw').value;
+  const newId = document.getElementById('new-id').value;
+  const newPw = document.getElementById('new-pw').value;
+  const confirmPw = document.getElementById('confirm-pw').value;
+  if (!curPw) return alert('현재 패스워드를 입력하세요');
+  if (!newId) return alert('새 ID를 입력하세요');
+  if (!newPw) return alert('새 패스워드를 입력하세요');
+  if (newPw !== confirmPw) return alert('새 패스워드가 일치하지 않습니다');
+
+  fetch('/api/auth', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current_pass: curPw, new_user: newId, new_pass: newPw, confirm_pass: confirmPw})
+  }).then(r => {
+    if (r.status === 401) { alert('인증 실패. 브라우저를 새로고침하세요.'); return; }
+    return r.json();
+  }).then(d => {
+    if (d?.ok) {
+      alert('계정이 변경되었습니다. 다시 로그인하세요.');
+      location.reload();
+    } else {
+      alert(d?.error || '변경 실패');
+    }
   });
 }
 

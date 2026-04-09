@@ -19,6 +19,7 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     }
 
     config.deviceId = doc["device_id"] | "node_1";
+    config.deviceName = doc["device_name"] | "새기기";
     config.product = doc["product"] | "RemoteDeck_PC";
 
     // Network
@@ -34,6 +35,10 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.network.wifiSsid = net["wifi"]["ssid"] | "";
     config.network.wifiPassword = net["wifi"]["password"] | "";
     config.network.wifiDhcp = net["wifi"]["dhcp"] | true;
+    config.network.wifiIp = net["wifi"]["ip"] | "";
+    config.network.wifiGateway = net["wifi"]["gateway"] | "";
+    config.network.wifiSubnet = net["wifi"]["subnet"] | "255.255.255.0";
+    config.network.wifiDns1 = net["wifi"]["dns1"] | "8.8.8.8";
     config.network.wifiMac = net["wifi"]["mac"] | "";
 
     // MQTT
@@ -63,8 +68,12 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.ntp.timezone = doc["ntp"]["timezone"] | "KST-9";
 
     // Firmware
-    config.firmware.version = doc["firmware"]["version"] | "2.0.0";
-    config.firmware.date = doc["firmware"]["date"] | "2026-04-06";
+    config.firmware.version = doc["firmware"]["version"] | "2.1.0";
+    config.firmware.date = doc["firmware"]["date"] | "2026-04-08";
+
+    // Auth
+    config.auth.user = doc["auth"]["user"] | "admin";
+    config.auth.pass = doc["auth"]["pass"] | "12345";
 
     Serial.printf("ConfigManager: Loaded config for %s\n", config.deviceId.c_str());
     return true;
@@ -74,6 +83,7 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     StaticJsonDocument<2048> doc;
 
     doc["device_id"] = config.deviceId;
+    doc["device_name"] = config.deviceName;
     doc["product"] = config.product;
 
     // Network
@@ -91,6 +101,10 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     wifi["ssid"] = config.network.wifiSsid;
     wifi["password"] = config.network.wifiPassword;
     wifi["dhcp"] = config.network.wifiDhcp;
+    wifi["ip"] = config.network.wifiIp;
+    wifi["gateway"] = config.network.wifiGateway;
+    wifi["subnet"] = config.network.wifiSubnet;
+    wifi["dns1"] = config.network.wifiDns1;
     wifi["mac"] = config.network.wifiMac;
 
     // MQTT
@@ -128,6 +142,11 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     fw["version"] = config.firmware.version;
     fw["date"] = config.firmware.date;
 
+    // Auth
+    JsonObject auth = doc.createNestedObject("auth");
+    auth["user"] = config.auth.user;
+    auth["pass"] = config.auth.pass;
+
     File file = SPIFFS.open(path, "w");
     if (!file) {
         Serial.printf("ConfigManager: Failed to open %s for writing\n", path);
@@ -143,6 +162,7 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
 
 void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.deviceId = "node_1";
+    config.deviceName = "새기기";
     config.product = "RemoteDeck_PC";
     config.network.mode = "ethernet";
     config.network.ethDhcp = false;
@@ -155,6 +175,10 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.network.wifiSsid = "";
     config.network.wifiPassword = "";
     config.network.wifiDhcp = true;
+    config.network.wifiIp = "";
+    config.network.wifiGateway = "";
+    config.network.wifiSubnet = "255.255.255.0";
+    config.network.wifiDns1 = "8.8.8.8";
     config.network.wifiMac = "";
     config.mqtt.broker = "";
     config.mqtt.port = 1883;
@@ -171,6 +195,8 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.wol.targetMac = "";
     config.ntp.server = "pool.ntp.org";
     config.ntp.timezone = "KST-9";
-    config.firmware.version = "2.0.0";
-    config.firmware.date = "2026-04-06";
+    config.firmware.version = "2.1.0";
+    config.firmware.date = "2026-04-08";
+    config.auth.user = "admin";
+    config.auth.pass = "12345";
 }

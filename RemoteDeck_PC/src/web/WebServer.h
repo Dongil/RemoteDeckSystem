@@ -3,14 +3,14 @@
 #include <functional>
 #include "WebSocketHandler.h"
 #include "OTAHandler.h"
+#include "config/DeviceConfig.h"
 
 class WebServer {
 public:
-    void begin(uint16_t port = 5050);
+    void begin(uint16_t port, const AuthConfig* auth);
 
     WebSocketHandler& ws() { return _ws; }
 
-    // API callback types
     using StatusGetter = std::function<String()>;
     using RelayHandler = std::function<void(uint8_t relay, const String& action, uint16_t duration)>;
     using ConfigGetter = std::function<String()>;
@@ -21,6 +21,7 @@ public:
     using WOLHandler = std::function<bool(const String& mac)>;
     using RebootHandler = std::function<void()>;
     using LogGetter = std::function<String()>;
+    using AuthChanger = std::function<bool(const String& curPass, const String& newUser, const String& newPass)>;
 
     void setStatusGetter(StatusGetter cb) { _getStatus = cb; }
     void setRelayHandler(RelayHandler cb) { _handleRelay = cb; }
@@ -32,6 +33,7 @@ public:
     void setWOLHandler(WOLHandler cb) { _handleWOL = cb; }
     void setRebootHandler(RebootHandler cb) { _handleReboot = cb; }
     void setLogGetter(LogGetter cb) { _getLog = cb; }
+    void setAuthChanger(AuthChanger cb) { _changeAuth = cb; }
 
     OTAHandler& ota() { return _ota; }
 
@@ -39,6 +41,7 @@ private:
     AsyncWebServer* _server = nullptr;
     WebSocketHandler _ws;
     OTAHandler _ota;
+    const AuthConfig* _auth = nullptr;
 
     StatusGetter _getStatus = nullptr;
     RelayHandler _handleRelay = nullptr;
@@ -50,7 +53,9 @@ private:
     WOLHandler _handleWOL = nullptr;
     RebootHandler _handleReboot = nullptr;
     LogGetter _getLog = nullptr;
+    AuthChanger _changeAuth = nullptr;
 
+    bool requireAuth(AsyncWebServerRequest* req);
     void setupStaticFiles();
     void setupAPI();
 };

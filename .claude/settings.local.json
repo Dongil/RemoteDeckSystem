@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(rm -rf .pio/libdeps .pio/build)",
+      "Bash(~/.platformio/penv/Scripts/platformio.exe run:*)",
+      "Bash(reg query:*)",
+      "Bash(reg.exe query:*)",
+      "Bash(powershell -Command \"Get-ItemProperty -Path 'HKLM:\\\\SYSTEM\\\\CurrentControlSet\\\\Control\\\\FileSystem' -Name LongPathsEnabled 2>&1\")",
+      "Bash(powershell -Command \"Set-ItemProperty -Path 'HKLM:\\\\SYSTEM\\\\CurrentControlSet\\\\Control\\\\FileSystem' -Name LongPathsEnabled -Value 1; Get-ItemProperty -Path 'HKLM:\\\\SYSTEM\\\\CurrentControlSet\\\\Control\\\\FileSystem' -Name LongPathsEnabled | Select LongPathsEnabled\")",
+      "Bash(curl -s --connect-timeout 3 http://192.168.1.200:5050/api/status)",
+      "Bash(ping -n 2 192.168.1.200)",
+      "Bash(curl:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(taskkill //F //IM IPSetupTool.exe)",
+      "Bash(cp:*)",
+      "Bash(powershell -Command \"Get-NetIPAddress -IPAddress 192.168.1.100 -ErrorAction SilentlyContinue | Format-Table InterfaceAlias, IPAddress, PrefixLength\")",
+      "Bash(powershell -Command \"Remove-NetIPAddress -IPAddress 192.168.1.100 -Confirm:\\\\$false; Write-Host 'Removed'\")",
+      "Bash(powershell -Command \"Remove-NetIPAddress -IPAddress 192.168.1.100 -Confirm:0 -ErrorAction SilentlyContinue; Get-NetIPAddress -IPAddress 192.168.1.100 -ErrorAction SilentlyContinue | Measure-Object | Select Count\")",
+      "Bash(powershell -Command \"Get-NetFirewallRule -DisplayName 'RemoteDeck*' -ErrorAction SilentlyContinue | Select DisplayName, Enabled, Direction, Action\")",
+      "Bash(powershell -Command \"Remove-NetFirewallRule -DisplayName 'RemoteDeck IPSetupTool' -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName 'RemoteDeck UDP 5051' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 5051; Write-Host 'Done'\")",
+      "Bash(powershell -Command \"New-NetFirewallRule -DisplayName 'RemoteDeck UDP Any' -Direction Inbound -Action Allow -Protocol UDP -Program 'C:\\\\Code\\\\Projects\\\\RemoteDeck\\\\RemoteDeckSystem\\\\IPSetupTool\\\\publish\\\\IPSetupTool.exe' -ErrorAction SilentlyContinue; Write-Host 'Done'\")"
+    ]
+  }
+}

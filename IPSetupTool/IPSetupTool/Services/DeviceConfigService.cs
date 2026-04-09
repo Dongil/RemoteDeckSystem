@@ -34,10 +34,30 @@ public class DeviceConfigService
         }
     }
 
-    public DeviceConfigRoot BuildConfigFromForm(
+    public DeviceConfigRoot BuildConfigForIPSetup(
+        string deviceId, string deviceName, string mode,
+        bool ethDhcp, string ethIp, string ethGateway, string ethSubnet, string ethDns1,
+        string wifiSsid, string wifiPassword, bool wifiDhcp,
+        string wifiIp, string wifiGateway, string wifiSubnet, string wifiDns)
+    {
+        return new DeviceConfigRoot
+        {
+            DeviceId = deviceId,
+            DeviceName = deviceName,
+            Network = new NetworkSection
+            {
+                Mode = mode,
+                Ethernet = new EthernetConfig { Dhcp = ethDhcp, IP = ethIp, Gateway = ethGateway, Subnet = ethSubnet, Dns1 = ethDns1 },
+                Wifi = new WifiConfig { Ssid = wifiSsid, Password = wifiPassword, Dhcp = wifiDhcp, IP = wifiIp, Gateway = wifiGateway, Subnet = wifiSubnet, Dns1 = wifiDns }
+            }
+        };
+    }
+
+    public DeviceConfigRoot BuildConfigFromFormV21(
         string deviceId, string mode,
         bool ethDhcp, string ethIp, string ethGateway, string ethSubnet, string ethDns1,
         string wifiSsid, string wifiPassword, bool wifiDhcp,
+        string wifiIp, string wifiGateway, string wifiSubnet, string wifiDns,
         string mqttBroker, int mqttPort, string mqttUser, string mqttPassword)
     {
         return new DeviceConfigRoot
@@ -58,7 +78,11 @@ public class DeviceConfigService
                 {
                     Ssid = wifiSsid,
                     Password = wifiPassword,
-                    Dhcp = wifiDhcp
+                    Dhcp = wifiDhcp,
+                    IP = wifiIp,
+                    Gateway = wifiGateway,
+                    Subnet = wifiSubnet,
+                    Dns1 = wifiDns
                 }
             },
             Mqtt = new MqttSection

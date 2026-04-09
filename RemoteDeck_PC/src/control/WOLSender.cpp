@@ -1,5 +1,5 @@
 #include "WOLSender.h"
-#include <Ethernet2.h>
+#include <NetworkUdp.h>
 #include "config/PinConfig.h"
 
 bool WOLSender::send(const char* macStr) {
@@ -51,7 +51,7 @@ bool WOLSender::sendPacket(const uint8_t mac[6]) {
         memcpy(&packet[6 + i * 6], mac, 6);
     }
 
-    EthernetUDP udp;
+    NetworkUDP udp;
     udp.begin(0);
     udp.beginPacket(IPAddress(255, 255, 255, 255), WOL_PORT);
     udp.write(packet, 102);

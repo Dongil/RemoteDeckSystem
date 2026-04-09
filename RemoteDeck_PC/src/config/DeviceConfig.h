@@ -3,7 +3,7 @@
 
 struct NetworkConfig {
     std::string mode;       // "ethernet" | "wifi"
-    // Ethernet
+    // Ethernet (ETH.h)
     bool ethDhcp;
     std::string ethIp;
     std::string ethGateway;
@@ -11,10 +11,14 @@ struct NetworkConfig {
     std::string ethDns1;
     std::string ethDns2;
     std::string ethMac;     // read-only, auto-detected
-    // WiFi
+    // WiFi STA
     std::string wifiSsid;
     std::string wifiPassword;
     bool wifiDhcp;
+    std::string wifiIp;
+    std::string wifiGateway;
+    std::string wifiSubnet;
+    std::string wifiDns1;
     std::string wifiMac;    // read-only, auto-detected
 };
 
@@ -30,13 +34,13 @@ struct MQTTConfig {
 };
 
 struct RelayConfig {
-    uint16_t pulseShortMs;  // default: 500
-    uint16_t pulseLongMs;   // default: 5000
+    uint16_t pulseShortMs;
+    uint16_t pulseLongMs;
 };
 
 struct MonitorConfig {
-    uint16_t pcledPollMs;   // default: 1000
-    bool autoNotify;        // default: true
+    uint16_t pcledPollMs;
+    bool autoNotify;
 };
 
 struct WOLConfig {
@@ -44,8 +48,8 @@ struct WOLConfig {
 };
 
 struct NTPConfig {
-    std::string server;     // default: "pool.ntp.org"
-    std::string timezone;   // default: "KST-9"
+    std::string server;
+    std::string timezone;
 };
 
 struct FirmwareInfo {
@@ -53,9 +57,15 @@ struct FirmwareInfo {
     std::string date;
 };
 
+struct AuthConfig {
+    std::string user;   // default: "admin"
+    std::string pass;   // default: "12345"
+};
+
 struct DeviceConfig {
     std::string deviceId;
-    std::string product;    // "RemoteDeck_PC"
+    std::string deviceName;  // 사용자가 지정하는 장치 이름
+    std::string product;
     NetworkConfig network;
     MQTTConfig mqtt;
     RelayConfig relay;
@@ -63,8 +73,8 @@ struct DeviceConfig {
     WOLConfig wol;
     NTPConfig ntp;
     FirmwareInfo firmware;
+    AuthConfig auth;
 };
 
-// SPIFFS paths
 constexpr const char* CONFIG_PATH    = "/deviceconfig.json";
 constexpr const char* SCHEDULE_PATH  = "/schedule.json";

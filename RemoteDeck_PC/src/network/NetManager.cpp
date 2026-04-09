@@ -1,103 +1,220 @@
 #include "NetManager.h"
-#include <esp_mac.h>
 
-void NetManager::begin(NetworkConfig& config, const std::string& deviceId) {
+NetManager* NetManager::_instance = nullptr;
+
+void NetManager::begin(NetworkConfig& config) {
     _config = &config;
+    _instance = this;
+    _connected = false;
+    _notifiedConnected = false;
+    _ethMgmtActive = false;
 
-    // 1. Always start WiFi AP (for Web UI - works regardless of Ethernet)
-    startWiFiAP(deviceId);
+    WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) { onNetworkEvent(event, info); });
 
-    // 2. Initialize Ethernet via Ethernet2 (reliable on all switches)
-    if (config.mode == "ethernet" || config.mode == "") {
-        _ethConnected = initEthernet(config);
-        if (_ethConnected) {
-            Serial.printf("Network: Ethernet connected, IP: %s\n",
-                          Ethernet.localIP().toString().c_str());
-            digitalWrite(PIN_STATUS1, HIGH);
-        } else {
-            Serial.println("Network: Ethernet connection failed");
-        }
+    if (config.mode == "wifi") {
+        // Dual network: ETH management (192.168.1.200) + WiFi STA (primary)
+        initEthManagement();
+        initWiFiSTA(config);
+    } else {
+        // Ethernet only (all services on ETH)
+        initEthernet(config);
     }
 }
 
 void NetManager::loop() {
-    // Ethernet2 maintains connection via hardware
-    if (_ethConnected) {
-        if (Ethernet.localIP() == INADDR_NONE) {
-            _ethConnected = false;
-            digitalWrite(PIN_STATUS1, LOW);
-            Serial.println("Network: Ethernet disconnected");
+    // Primary network connected notification (once)
+    if (_connected && !_notifiedConnected) {
+        _notifiedConnected = true;
+        digitalWrite(PIN_STATUS1, HIGH);
+        Serial.printf("Network: %s connected, IP: %s\n",
+                      _mode == NetMode::ETHERNET ? "Ethernet" : "WiFi",
+                      localIP().toString().c_str());
+        if (_onConnected) _onConnected();
+    }
+
+    // Primary disconnected
+    if (!_connected && _notifiedConnected) {
+        _notifiedConnected = false;
+        digitalWrite(PIN_STATUS1, LOW);
+        Serial.println("Network: Primary disconnected");
+    }
+
+    // WiFi STA auto-reconnect
+    if (_mode == NetMode::WIFI_STA && !_connected) {
+        static unsigned long lastRetry = 0;
+        if (millis() - lastRetry > 10000) {
+            lastRetry = millis();
+            Serial.println("Network: WiFi reconnecting...");
+            WiFi.reconnect();
         }
     }
 }
 
-bool NetManager::isEthernetConnected() const {
-    return _ethConnected;
+IPAddress NetManager::localIP() const {
+    if (_mode == NetMode::ETHERNET) return ETH.localIP();
+    if (_mode == NetMode::WIFI_STA) return WiFi.localIP();
+    return IPAddress(0, 0, 0, 0);
 }
 
-IPAddress NetManager::ethernetIP() const {
-    return _ethConnected ? Ethernet.localIP() : IPAddress(0, 0, 0, 0);
+std::string NetManager::macAddress() const {
+    if (_mode == NetMode::ETHERNET && _config) return _config->ethMac;
+    if (_mode == NetMode::WIFI_STA && _config) return _config->wifiMac;
+    return "";
 }
 
-std::string NetManager::ethernetMAC() const {
-    return _config ? _config->ethMac : "";
+IPAddress NetManager::ethManagementIP() const {
+    if (_ethMgmtActive) return ETH.localIP();
+    return IPAddress(0, 0, 0, 0);
 }
 
-IPAddress NetManager::wifiAPIP() const {
-    return WiFi.softAPIP();
-}
+// ─── Ethernet primary mode ─────────────────────────────
 
-void NetManager::startWiFiAP(const std::string& deviceId) {
-    _apSSID = "RemoteDeck_" + String(deviceId.c_str());
-    String apPassword = "remotedeck";
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(_apSSID.c_str(), apPassword.c_str());
-
-    Serial.printf("Network: WiFi AP started, SSID: %s, PW: %s, IP: %s\n",
-                  _apSSID.c_str(), apPassword.c_str(),
-                  WiFi.softAPIP().toString().c_str());
-}
-
-bool NetManager::initEthernet(NetworkConfig& config) {
+void NetManager::initEthernet(NetworkConfig& config) {
     SPI.begin(PIN_ETH_SCK, PIN_ETH_MISO, PIN_ETH_MOSI, PIN_ETH_CS);
-    Ethernet.init(PIN_ETH_CS);
-    delay(100);
+    Serial.println("Network: Initializing Ethernet (primary)...");
 
-    byte mac[6];
-    esp_read_mac(mac, ESP_MAC_ETH);
+    if (!ETH.begin(ETH_PHY_W5500, 1, PIN_ETH_CS, PIN_ETH_INT, -1, SPI)) {
+        Serial.println("Network: ETH.begin() failed");
+        return;
+    }
+    Serial.println("Network: ETH.begin() OK, waiting for link...");
+}
 
-    char macStr[18];
-    sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    config.ethMac = macStr;
+// ─── Ethernet management mode (WiFi mode, hardcoded 192.168.1.200) ──
 
-    Serial.printf("Network: ETH initializing (MAC: %s)...\n", macStr);
+void NetManager::initEthManagement() {
+    SPI.begin(PIN_ETH_SCK, PIN_ETH_MISO, PIN_ETH_MOSI, PIN_ETH_CS);
+    Serial.println("Network: Starting ETH management (192.168.1.200)...");
 
-    unsigned long startTime = millis();
+    if (!ETH.begin(ETH_PHY_W5500, 1, PIN_ETH_CS, PIN_ETH_INT, -1, SPI)) {
+        Serial.println("Network: ETH management begin() failed");
+        return;
+    }
+    _ethMgmtActive = true;
+    // Static IP applied in onNetworkEvent after ETH_CONNECTED
+}
 
-    if (!config.ethDhcp) {
-        IPAddress ip = strToIP(config.ethIp);
-        IPAddress gw = strToIP(config.ethGateway);
-        IPAddress sn = strToIP(config.ethSubnet);
-        IPAddress dns = strToIP(config.ethDns1);
-        Ethernet.begin(mac, ip, dns, gw, sn);
+// ─── WiFi STA mode ─────────────────────────────────────
 
-        // Wait for static IP to be applied
-        while (millis() - startTime < 5000) {
-            delay(100);
-        }
-    } else {
-        while (Ethernet.begin(mac) == 0 && millis() - startTime < 10000) {
-            delay(100);
+void NetManager::initWiFiSTA(NetworkConfig& config) {
+    Serial.println("Network: === WiFi STA Init ===");
+    Serial.printf("  SSID: '%s'\n", config.wifiSsid.c_str());
+    Serial.printf("  Password length: %d\n", (int)config.wifiPassword.length());
+    Serial.printf("  DHCP: %s\n", config.wifiDhcp ? "true" : "false");
+
+    WiFi.mode(WIFI_STA);
+
+    // Connect (scan hidden SSIDs too)
+    WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str(),
+               0, nullptr, true);  // channel=0, bssid=null, connect=true (scans hidden SSIDs)
+
+    // Static IP applied AFTER WiFi.begin()
+    if (!config.wifiDhcp) {
+        if (config.wifiIp.empty() || config.wifiIp == "0.0.0.0") {
+            Serial.println("  WARNING: Static IP empty - falling back to DHCP");
+        } else {
+            IPAddress ip = strToIP(config.wifiIp);
+            IPAddress gw = strToIP(config.wifiGateway);
+            IPAddress sn = strToIP(config.wifiSubnet);
+            IPAddress dns = strToIP(config.wifiDns1);
+            Serial.printf("  Static IP: %s, GW: %s, SN: %s, DNS: %s\n",
+                          ip.toString().c_str(), gw.toString().c_str(),
+                          sn.toString().c_str(), dns.toString().c_str());
+            WiFi.config(ip, gw, sn, dns);
         }
     }
 
-    return Ethernet.localIP() != INADDR_NONE;
+    Serial.println("  WiFi.begin() called, waiting for connection event...");
 }
+
+// ─── Helpers ────────────────────────────────────────────
 
 IPAddress NetManager::strToIP(const std::string& str) {
     int p[4] = {0};
     sscanf(str.c_str(), "%d.%d.%d.%d", &p[0], &p[1], &p[2], &p[3]);
     return IPAddress(p[0], p[1], p[2], p[3]);
+}
+
+void NetManager::onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    if (!_instance) return;
+
+    switch (event) {
+        case ARDUINO_EVENT_ETH_START:
+            Serial.println("Network: ETH Started");
+            break;
+
+        case ARDUINO_EVENT_ETH_CONNECTED:
+            Serial.println("Network: ETH Link Up");
+            if (_instance->_ethMgmtActive) {
+                // Management mode: hardcoded 192.168.1.200
+                Serial.println("Network: Applying ETH management IP 192.168.1.200");
+                ETH.config(IPAddress(192,168,1,200),
+                           IPAddress(192,168,1,1),
+                           IPAddress(255,255,255,0));
+            } else if (_instance->_config && !_instance->_config->ethDhcp) {
+                // Primary mode: configured static IP
+                Serial.printf("Network: Applying static IP: %s\n",
+                              _instance->_config->ethIp.c_str());
+                ETH.config(strToIP(_instance->_config->ethIp),
+                           strToIP(_instance->_config->ethGateway),
+                           strToIP(_instance->_config->ethSubnet),
+                           strToIP(_instance->_config->ethDns1),
+                           strToIP(_instance->_config->ethDns2));
+            }
+            break;
+
+        case ARDUINO_EVENT_ETH_GOT_IP:
+            if (_instance->_ethMgmtActive) {
+                // Management ETH: don't set primary _connected
+                if (_instance->_config) _instance->_config->ethMac = ETH.macAddress().c_str();
+                Serial.printf("Network: ETH Management IP: %s (for IPSetupTool)\n",
+                              ETH.localIP().toString().c_str());
+            } else {
+                // Primary ETH
+                _instance->_connected = true;
+                _instance->_mode = NetMode::ETHERNET;
+                if (_instance->_config) _instance->_config->ethMac = ETH.macAddress().c_str();
+                Serial.printf("Network: ETH Got IP: %s, MAC: %s\n",
+                              ETH.localIP().toString().c_str(), ETH.macAddress().c_str());
+            }
+            break;
+
+        case ARDUINO_EVENT_ETH_DISCONNECTED:
+            if (!_instance->_ethMgmtActive) {
+                _instance->_connected = false;
+            }
+            Serial.println("Network: ETH Link Down");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            Serial.println("Network: WiFi STA Connected to AP");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            _instance->_connected = true;
+            _instance->_mode = NetMode::WIFI_STA;
+            if (_instance->_config) _instance->_config->wifiMac = WiFi.macAddress().c_str();
+            Serial.printf("Network: WiFi Got IP: %s, MAC: %s\n",
+                          WiFi.localIP().toString().c_str(), WiFi.macAddress().c_str());
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            _instance->_connected = false;
+            {
+                uint8_t reason = info.wifi_sta_disconnected.reason;
+                static unsigned long lastLog = 0;
+                static uint8_t lastReason = 0;
+                if (millis() - lastLog > 5000 || reason != lastReason) {
+                    lastLog = millis();
+                    lastReason = reason;
+                    Serial.printf("Network: WiFi Disconnected (reason: %d)\n", reason);
+                    // Common reasons: 2=AUTH_EXPIRE, 15=4WAY_HANDSHAKE_TIMEOUT(wrong pw),
+                    // 201=NO_AP_FOUND, 6=NOT_AUTHED, 7=NOT_ASSOCED
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
 }

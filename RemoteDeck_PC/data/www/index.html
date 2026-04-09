@@ -8,7 +8,7 @@
 </head>
 <body>
 <header>
-  <h1>RemoteDeck PC 전원 관리</h1>
+  <h1 id="device-name-header">RemoteDeck PC 전원 관리</h1>
   <span id="fw-ver"></span>
 </header>
 <nav>
@@ -35,6 +35,7 @@
     </div>
     <div class="card">
       <h2>시스템 정보</h2>
+      <div class="status-line">장치 이름: <span id="dev-name" style="color:#0ff;font-weight:bold">--</span></div>
       <div class="status-line">장치 ID: <span id="dev-id">--</span></div>
       <div class="status-line">IP 주소: <span id="ip-addr">--</span></div>
       <div class="status-line">가동 시간: <span id="uptime">--</span></div>
@@ -97,6 +98,14 @@
     <div id="config-form"></div>
     <button onclick="loadConfig()">새로고침</button>
     <button onclick="saveConfig()">저장 및 재부팅</button>
+  </div>
+  <div class="card">
+    <h2>계정 변경</h2>
+    <div class="form-row"><label>현재 패스워드: <input type="password" id="cur-pw"></label></div>
+    <div class="form-row"><label>새 ID: <input type="text" id="new-id" value="admin"></label></div>
+    <div class="form-row"><label>새 패스워드: <input type="password" id="new-pw"></label></div>
+    <div class="form-row"><label>패스워드 확인: <input type="password" id="confirm-pw"></label></div>
+    <button onclick="changeAccount()">변경</button>
   </div>
 </section>
 

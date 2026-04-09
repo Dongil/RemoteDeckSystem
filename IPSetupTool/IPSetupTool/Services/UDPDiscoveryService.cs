@@ -102,11 +102,15 @@ public class UDPDiscoveryService
         return devices;
     }
 
-    public async Task<DeviceConfigRoot?> GetConfigViaUDPAsync(DeviceInfo device)
+    // Auth check result from last GetConfig call (same socket)
+    public bool LastAuthCheckResult { get; private set; } = false;
+
+    public async Task<DeviceConfigRoot?> GetConfigViaUDPAsync(DeviceInfo device, string? authUser = null, string? authPass = null)
     {
         var payload = Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(new { cmd = "GET_CONFIG", device_id = device.DeviceId }));
         var ep = new IPEndPoint(IPAddress.Parse(device.IP), DiscoveryPort);
+        LastAuthCheckResult = false;
 
         // ARP warmup before first attempt
         Log($"GetConfig: ARP warmup ping to {device.IP}");
@@ -156,7 +160,26 @@ public class UDPDiscoveryService
                     if (doc.RootElement.TryGetProperty("config", out var configEl))
                     {
                         Log("  GET_CONFIG OK");
-                        return JsonSerializer.Deserialize<DeviceConfigRoot>(configEl.GetRawText());
+                        var configResult = JsonSerializer.Deserialize<DeviceConfigRoot>(configEl.GetRawText());
+
+                        // Auth check on same socket (ARP already resolved)
+                        if (authUser != null && authPass != null)
+                        {
+                            var authPayload = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+                                new { cmd = "AUTH_CHECK", device_id = device.DeviceId,
+                                      auth = new { user = authUser, pass = authPass } }));
+                            await udp.SendAsync(authPayload, authPayload.Length, ep);
+                            try
+                            {
+                                var authResult = await udp.ReceiveAsync(new CancellationTokenSource(3000).Token);
+                                var authJson = Encoding.UTF8.GetString(authResult.Buffer);
+                                Log($"  AUTH_CHECK on same socket: {authJson}");
+                                LastAuthCheckResult = authJson.Contains("\"ok\"");
+                            }
+                            catch { Log("  AUTH_CHECK timeout on same socket"); }
+                        }
+
+                        return configResult;
                     }
                 }
             }
@@ -227,6 +250,156 @@ public class UDPDiscoveryService
         {
             Log("Reboot ACK timeout (expected)");
             return true;
+        }
+    }
+
+    // ─── Auth versions (v2.1) ──────────────────────────────
+
+    public async Task<bool> CheckAuthAsync(DeviceInfo device, string authUser, string authPass)
+    {
+        var payload = Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(new { cmd = "AUTH_CHECK", device_id = device.DeviceId,
+                auth = new { user = authUser, pass = authPass } }));
+        var ep = new IPEndPoint(IPAddress.Parse(device.IP), DiscoveryPort);
+
+        Log($"AuthCheck to {device.IP} (user={authUser})");
+
+        // ARP warmup
+        using (var ping = new Ping())
+        { for (int i = 0; i < 3; i++) { try { var r = await ping.SendPingAsync(device.IP, 1000); if (r.Status == IPStatus.Success) break; } catch { } } }
+        await Task.Delay(200);
+
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            try
+            {
+                using var udp = new UdpClient(0);
+                udp.EnableBroadcast = true;
+                udp.Client.ReceiveTimeout = 3000;
+                await udp.SendAsync(payload, payload.Length, ep);
+
+                var result = await udp.ReceiveAsync(new CancellationTokenSource(3000).Token);
+                var json = Encoding.UTF8.GetString(result.Buffer);
+                Log($"AuthCheck response: {json}");
+                return json.Contains("\"ok\"");
+            }
+            catch (Exception ex)
+            {
+                Log($"AuthCheck attempt {attempt} failed: {ex.GetType().Name}");
+                if (attempt < 3) await Task.Delay(500);
+            }
+        }
+        Log("AuthCheck: All attempts failed");
+        return false;
+    }
+
+    public async Task<bool> SendConfigWithAuthAsync(DeviceInfo device, DeviceConfigRoot config, string authUser, string authPass)
+    {
+        var payload = new
+        {
+            cmd = "SET_CONFIG",
+            device_id = device.DeviceId,
+            auth = new { user = authUser, pass = authPass },
+            config
+        };
+
+        var json = JsonSerializer.Serialize(payload);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        Log($"SendConfigWithAuth to {device.IP} ({bytes.Length} bytes)");
+
+        // ARP warmup
+        using (var ping = new Ping())
+        { for (int i = 0; i < 3; i++) { try { var r = await ping.SendPingAsync(device.IP, 1000); if (r.Status == IPStatus.Success) break; } catch { } } }
+        await Task.Delay(200);
+
+        using var udp = new UdpClient(0);
+        udp.EnableBroadcast = true;
+        udp.Client.ReceiveTimeout = 5000;
+
+        var ep = new IPEndPoint(IPAddress.Parse(device.IP), DiscoveryPort);
+        await udp.SendAsync(bytes, bytes.Length, ep);
+
+        try
+        {
+            var result = await udp.ReceiveAsync(new CancellationTokenSource(5000).Token);
+            var response = Encoding.UTF8.GetString(result.Buffer);
+            Log($"SendConfig ACK: {response}");
+            using var doc = JsonDocument.Parse(response);
+            if (doc.RootElement.TryGetProperty("result", out var resultProp))
+            {
+                var r = resultProp.GetString();
+                if (r == "auth_failed") { Log("SendConfig: AUTH FAILED"); return false; }
+                return r == "ok";
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"SendConfig failed: {ex.GetType().Name}");
+            return false;
+        }
+    }
+
+    public async Task<bool> SendRebootWithAuthAsync(DeviceInfo device, string authUser, string authPass)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            cmd = "REBOOT",
+            device_id = device.DeviceId,
+            auth = new { user = authUser, pass = authPass }
+        });
+        var bytes = Encoding.UTF8.GetBytes(payload);
+
+        Log($"SendRebootWithAuth to {device.IP}");
+
+        using var udp = new UdpClient(0);
+        udp.EnableBroadcast = true;
+
+        var ep = new IPEndPoint(IPAddress.Parse(device.IP), DiscoveryPort);
+        await udp.SendAsync(bytes, bytes.Length, ep);
+
+        try
+        {
+            var result = await udp.ReceiveAsync(new CancellationTokenSource(2000).Token);
+            var response = Encoding.UTF8.GetString(result.Buffer);
+            if (response.Contains("auth_failed")) return false;
+            return true;
+        }
+        catch { return true; }
+    }
+
+    public async Task<bool> ChangeAuthAsync(DeviceInfo device, string curUser, string curPass, string newUser, string newPass)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            cmd = "CHANGE_AUTH",
+            device_id = device.DeviceId,
+            auth = new { user = curUser, pass = curPass },
+            new_auth = new { user = newUser, pass = newPass }
+        });
+        var bytes = Encoding.UTF8.GetBytes(payload);
+
+        Log($"ChangeAuth to {device.IP}");
+
+        using var udp = new UdpClient(0);
+        udp.EnableBroadcast = true;
+        udp.Client.ReceiveTimeout = 5000;
+
+        var ep = new IPEndPoint(IPAddress.Parse(device.IP), DiscoveryPort);
+        await udp.SendAsync(bytes, bytes.Length, ep);
+
+        try
+        {
+            var result = await udp.ReceiveAsync(new CancellationTokenSource(5000).Token);
+            var response = Encoding.UTF8.GetString(result.Buffer);
+            Log($"ChangeAuth response: {response}");
+            return response.Contains("\"ok\"");
+        }
+        catch (Exception ex)
+        {
+            Log($"ChangeAuth failed: {ex.GetType().Name}");
+            return false;
         }
     }
 }
