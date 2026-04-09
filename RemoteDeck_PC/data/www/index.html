@@ -93,19 +93,115 @@
 
 <!-- 설정 -->
 <section id="settings" class="page">
-  <div class="card">
-    <h2>장치 설정</h2>
-    <div id="config-form"></div>
-    <button onclick="loadConfig()">새로고침</button>
-    <button onclick="saveConfig()">저장 및 재부팅</button>
+  <div class="sub-tabs">
+    <button class="sub-tab active" data-stab="stab-network">네트워크</button>
+    <button class="sub-tab" data-stab="stab-mqtt">MQTT</button>
+    <button class="sub-tab" data-stab="stab-account">계정</button>
+    <button class="sub-tab" data-stab="stab-etc">기타</button>
   </div>
-  <div class="card">
-    <h2>계정 변경</h2>
-    <div class="form-row"><label>현재 패스워드: <input type="password" id="cur-pw"></label></div>
-    <div class="form-row"><label>새 ID: <input type="text" id="new-id" value="admin"></label></div>
-    <div class="form-row"><label>새 패스워드: <input type="password" id="new-pw"></label></div>
-    <div class="form-row"><label>패스워드 확인: <input type="password" id="confirm-pw"></label></div>
-    <button onclick="changeAccount()">변경</button>
+
+  <!-- 네트워크 설정 -->
+  <div id="stab-network" class="sub-page active">
+    <div class="card">
+      <h2>장치 정보</h2>
+      <div class="cfg-group"><label>장치 ID</label><input type="text" id="cfg-device-id"></div>
+      <div class="cfg-group"><label>장치 이름</label><input type="text" id="cfg-device-name"></div>
+    </div>
+    <div class="card">
+      <h2>네트워크 모드</h2>
+      <div class="radio-group">
+        <label class="radio-label"><input type="radio" name="net-mode" value="ethernet" checked> Ethernet</label>
+        <label class="radio-label"><input type="radio" name="net-mode" value="wifi"> WiFi</label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>이더넷 설정</h2>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-eth-dhcp"> DHCP 사용</label></div>
+      <div class="cfg-group"><label>IP 주소</label><input type="text" id="cfg-eth-ip"></div>
+      <div class="cfg-group"><label>게이트웨이</label><input type="text" id="cfg-eth-gw"></div>
+      <div class="cfg-group"><label>서브넷 마스크</label><input type="text" id="cfg-eth-subnet"></div>
+      <div class="cfg-group"><label>DNS 1</label><input type="text" id="cfg-eth-dns1"></div>
+      <div class="cfg-group"><label>MAC 주소</label><input type="text" id="cfg-eth-mac" disabled></div>
+    </div>
+    <div class="card">
+      <h2>WiFi 설정</h2>
+      <div class="cfg-group"><label>SSID</label><input type="text" id="cfg-wifi-ssid"></div>
+      <div class="cfg-group"><label>비밀번호</label><input type="password" id="cfg-wifi-pw"></div>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-wifi-dhcp"> DHCP 사용</label></div>
+      <div class="cfg-group"><label>IP 주소</label><input type="text" id="cfg-wifi-ip"></div>
+      <div class="cfg-group"><label>게이트웨이</label><input type="text" id="cfg-wifi-gw"></div>
+      <div class="cfg-group"><label>서브넷 마스크</label><input type="text" id="cfg-wifi-subnet"></div>
+      <div class="cfg-group"><label>DNS 1</label><input type="text" id="cfg-wifi-dns1"></div>
+      <div class="cfg-group"><label>MAC 주소</label><input type="text" id="cfg-wifi-mac" disabled></div>
+    </div>
+    <div class="btn-row">
+      <button onclick="saveNetwork()">저장 및 재부팅</button>
+    </div>
+  </div>
+
+  <!-- MQTT 설정 -->
+  <div id="stab-mqtt" class="sub-page">
+    <div class="card">
+      <h2>MQTT 설정</h2>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-mqtt-enable"> MQTT 사용</label></div>
+      <div id="mqtt-fields">
+        <div class="cfg-group"><label>브로커 주소</label><input type="text" id="cfg-mqtt-broker" placeholder="192.168.1.100"></div>
+        <div class="cfg-group"><label>포트</label><input type="number" id="cfg-mqtt-port" value="1883"></div>
+        <div class="cfg-group"><label>사용자</label><input type="text" id="cfg-mqtt-user"></div>
+        <div class="cfg-group"><label>비밀번호</label><input type="password" id="cfg-mqtt-pass"></div>
+        <div class="cfg-group"><label>Keep Alive (초)</label><input type="number" id="cfg-mqtt-keepalive" value="120"></div>
+        <div class="cfg-group"><label>발행 토픽</label><input type="text" id="cfg-mqtt-pub"></div>
+        <div class="cfg-group"><label>구독 토픽</label><input type="text" id="cfg-mqtt-sub"></div>
+        <div class="cfg-group"><label>Ping 토픽</label><input type="text" id="cfg-mqtt-ping"></div>
+      </div>
+      <div class="btn-row">
+        <button onclick="testMQTT()">연결 테스트</button>
+        <button onclick="saveMQTT()">저장</button>
+        <button onclick="rebootDevice()">재부팅</button>
+      </div>
+      <div id="mqtt-test-result" class="test-result"></div>
+    </div>
+  </div>
+
+  <!-- 계정 설정 -->
+  <div id="stab-account" class="sub-page">
+    <div class="card">
+      <h2>관리자 계정 변경</h2>
+      <div class="cfg-group"><label>현재 패스워드</label><input type="password" id="cur-pw"></div>
+      <div class="cfg-group"><label>새 ID</label><input type="text" id="new-id" value="admin"></div>
+      <div class="cfg-group"><label>새 패스워드</label><input type="password" id="new-pw"></div>
+      <div class="cfg-group"><label>패스워드 확인</label><input type="password" id="confirm-pw"></div>
+      <div class="btn-row">
+        <button onclick="changeAccount()">변경</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 기타 설정 -->
+  <div id="stab-etc" class="sub-page">
+    <div class="card">
+      <h2>릴레이 설정</h2>
+      <div class="cfg-group"><label>짧은 펄스 (ms)</label><input type="number" id="cfg-relay-short"></div>
+      <div class="cfg-group"><label>긴 펄스 (ms)</label><input type="number" id="cfg-relay-long"></div>
+    </div>
+    <div class="card">
+      <h2>PC 모니터링</h2>
+      <div class="cfg-group"><label>폴링 주기 (ms)</label><input type="number" id="cfg-mon-poll"></div>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-mon-notify" checked> 자동 알림</label></div>
+    </div>
+    <div class="card">
+      <h2>WOL</h2>
+      <div class="cfg-group"><label>기본 대상 MAC</label><input type="text" id="cfg-wol-mac" placeholder="AA:BB:CC:DD:EE:FF"></div>
+    </div>
+    <div class="card">
+      <h2>NTP</h2>
+      <div class="cfg-group"><label>NTP 서버</label><input type="text" id="cfg-ntp-server"></div>
+      <div class="cfg-group"><label>시간대</label><input type="text" id="cfg-ntp-tz"></div>
+    </div>
+    <div class="btn-row">
+      <button onclick="saveEtc()">저장</button>
+      <button onclick="rebootDevice()">재부팅</button>
+    </div>
   </div>
 </section>
 

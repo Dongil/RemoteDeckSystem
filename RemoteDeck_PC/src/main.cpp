@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
 
 #include "config/PinConfig.h"
 #include "config/DeviceConfig.h"
@@ -23,6 +25,17 @@
 
 #include "utils/JsonUtils.h"
 #include "utils/Logger.h"
+
+// ─── MQTT Test State ────────────────────────────────
+struct MQTTTestState {
+    char broker[64];
+    IPAddress ip;
+    uint16_t port;
+    char user[32];
+    char pass[32];
+    volatile int8_t result; // -2=dns_pending, -1=testing, 0=fail, 1=ok, 2=idle
+};
+MQTTTestState mqttTestState = {{}, IPAddress(), 0, {}, {}, 2};
 
 // ─── Global instances ───────────────────────────────
 DeviceConfig config;
@@ -129,6 +142,29 @@ bool onUDPConfig(const char* jsonConfig) {
         if (mq.containsKey("port")) config.mqtt.port = mq["port"];
         if (mq.containsKey("user")) config.mqtt.user = mq["user"].as<std::string>();
         if (mq.containsKey("password")) config.mqtt.password = mq["password"].as<std::string>();
+        if (mq.containsKey("keepalive")) config.mqtt.keepalive = mq["keepalive"];
+        if (mq.containsKey("topic_pub")) config.mqtt.topicPub = mq["topic_pub"].as<std::string>();
+        if (mq.containsKey("topic_sub")) config.mqtt.topicSub = mq["topic_sub"].as<std::string>();
+        if (mq.containsKey("topic_ping")) config.mqtt.topicPing = mq["topic_ping"].as<std::string>();
+    }
+    if (doc.containsKey("relay")) {
+        JsonObject rl = doc["relay"];
+        if (rl.containsKey("pulse_short_ms")) config.relay.pulseShortMs = rl["pulse_short_ms"];
+        if (rl.containsKey("pulse_long_ms")) config.relay.pulseLongMs = rl["pulse_long_ms"];
+    }
+    if (doc.containsKey("monitor")) {
+        JsonObject mon = doc["monitor"];
+        if (mon.containsKey("pcled_poll_interval_ms")) config.monitor.pcledPollMs = mon["pcled_poll_interval_ms"];
+        if (mon.containsKey("auto_notify")) config.monitor.autoNotify = mon["auto_notify"];
+    }
+    if (doc.containsKey("wol")) {
+        JsonObject wolObj = doc["wol"];
+        if (wolObj.containsKey("target_mac")) config.wol.targetMac = wolObj["target_mac"].as<std::string>();
+    }
+    if (doc.containsKey("ntp")) {
+        JsonObject ntpObj = doc["ntp"];
+        if (ntpObj.containsKey("server")) config.ntp.server = ntpObj["server"].as<std::string>();
+        if (ntpObj.containsKey("timezone")) config.ntp.timezone = ntpObj["timezone"].as<std::string>();
     }
 
     return ConfigManager::save(config);
@@ -296,6 +332,7 @@ String buildConfigJson() {
     mq["keepalive"] = config.mqtt.keepalive;
     mq["topic_pub"] = config.mqtt.topicPub;
     mq["topic_sub"] = config.mqtt.topicSub;
+    mq["topic_ping"] = config.mqtt.topicPing;
 
     JsonObject rl = doc.createNestedObject("relay");
     rl["pulse_short_ms"] = config.relay.pulseShortMs;
@@ -398,11 +435,6 @@ void setup() {
         // NTP
         ntpSync.begin(config.ntp.server.c_str(), config.ntp.timezone.c_str());
 
-        // ONLINE status via MQTT
-        StatusConfig online(config.deviceId, "ONLINE", 1, 1,
-                            networkManager.localIP().toString().c_str());
-        mqttHandler.publishStatus(online);
-
         logger.log("NETWORK", networkManager.activeMode() == NetMode::ETHERNET ?
                    "Ethernet connected" : "WiFi connected");
     });
@@ -434,8 +466,14 @@ void setup() {
     rs485Handler.begin(PIN_RS485_RX, PIN_RS485_TX, RS485_BAUD);
     rs485Handler.setOnCommand(onRS485Command);
 
-    // MQTT callback
+    // MQTT callbacks
     mqttHandler.setOnCommand(onMQTTCommand);
+    mqttHandler.setOnConnected([]() {
+        StatusConfig online(config.deviceId, "ONLINE", 1, 1,
+                            networkManager.localIP().toString().c_str());
+        mqttHandler.publishStatus(online);
+        logger.log("MQTT", "Connected, ONLINE published");
+    });
 
     // Relay/PC callbacks
     relayController.setOnChange(onRelayChange);
@@ -485,6 +523,33 @@ void setup() {
         config.auth.pass = newPass.c_str();
         return ConfigManager::save(config);
     });
+    // MQTT test: async - POST starts test, GET polls result
+    webServer.setMQTTTestStarter([](const String& json) -> bool {
+        if (mqttTestState.result == -1 || mqttTestState.result == -2) return false;
+        StaticJsonDocument<256> doc;
+        if (deserializeJson(doc, json)) return false;
+        strlcpy(mqttTestState.broker, doc["broker"] | "", sizeof(mqttTestState.broker));
+        mqttTestState.port = doc["port"] | 1883;
+        strlcpy(mqttTestState.user, doc["user"] | "", sizeof(mqttTestState.user));
+        strlcpy(mqttTestState.pass, doc["password"] | "", sizeof(mqttTestState.pass));
+        if (strlen(mqttTestState.broker) == 0) return false;
+
+        // Must be an IP address (DNS not supported in test mode)
+        if (!mqttTestState.ip.fromString(mqttTestState.broker)) return false;
+
+        mqttTestState.result = -2; // loop() will launch task
+        return true;
+    });
+    webServer.setMQTTTestGetter([]() -> String {
+        String r = "{\"status\":\"";
+        int8_t s = mqttTestState.result;
+        if (s == -2 || s == -1) r += "testing";
+        else if (s == 1) r += "ok";
+        else if (s == 0) r += "fail";
+        else r += "idle";
+        r += "\",\"ip\":\"" + mqttTestState.ip.toString() + "\"}";
+        return r;
+    });
     webServer.ota().setOnProgress([](uint8_t pct) {
         webServer.ws().broadcastOTAProgress(pct);
     });
@@ -519,6 +584,38 @@ void setup() {
 
 // ─── Loop ───────────────────────────────────────────
 
+void launchMQTTTestTask() {
+    mqttTestState.result = -1;
+    xTaskCreate([](void* param) {
+        auto* t = (MQTTTestState*)param;
+        WiFiClient testClient;
+        testClient.setTimeout(5);
+        if (!testClient.connect(t->ip, t->port, 5000)) {
+            Serial.printf("MQTT test: TCP connect to %s:%d failed\n", t->ip.toString().c_str(), t->port);
+            t->result = 0;
+            vTaskDelete(NULL);
+            return;
+        }
+        PubSubClient testMqtt(testClient);
+        testMqtt.setServer(t->ip, t->port);
+        testMqtt.setSocketTimeout(3);
+        String clientId = "RD-test-" + String(random(0xffff), HEX);
+        bool ok = (strlen(t->user) > 0)
+            ? testMqtt.connect(clientId.c_str(), t->user, t->pass)
+            : testMqtt.connect(clientId.c_str());
+        Serial.printf("MQTT test: => %s\n", ok ? "OK" : "FAIL");
+        if (ok) testMqtt.disconnect();
+        testClient.stop();
+        t->result = ok ? 1 : 0;
+        vTaskDelete(NULL);
+    }, "mqttTest", 16384, &mqttTestState, 1, NULL);
+}
+
+void startMQTTTestTask() {
+    if (mqttTestState.result != -2) return;
+    launchMQTTTestTask();
+}
+
 void loop() {
     networkManager.loop();
     mqttHandler.loop();
@@ -528,6 +625,9 @@ void loop() {
     scheduleManager.loop();
     udpDiscovery.loop();
     webServer.ws().loop();
+
+    // MQTT test: DNS resolution + task launch from main loop
+    startMQTTTestTask();
 
     // STATUS2: auto-off after 3 seconds
     if (status2OffTime > 0 && millis() >= status2OffTime) {

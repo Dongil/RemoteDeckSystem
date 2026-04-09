@@ -6,8 +6,8 @@
     "mode": "ethernet",
     "ethernet": {
       "dhcp": false,
-      "ip": "192.168.1.200",
-      "gateway": "192.168.1.1",
+      "ip": "192.168.10.196",
+      "gateway": "192.168.10.1",
       "subnet": "255.255.255.0",
       "dns1": "8.8.8.8",
       "dns2": "8.8.4.4",
@@ -20,7 +20,7 @@
       "ip": "",
       "gateway": "",
       "subnet": "255.255.255.0",
-      "dns1": "8.8.8.8",
+      "dns1": "",
       "mac": ""
     }
   },
@@ -34,9 +34,9 @@
     "user": "",
     "password": "",
     "keepalive": 120,
-    "topic_pub": "RemoteDeck/server",
-    "topic_sub": "RemoteDeck/[device_id]",
-    "topic_ping": "RemoteDeck/ping"
+    "topic_pub": "RemoteDeck/PC/server",
+    "topic_sub": "RemoteDeck/PC/[device_id]",
+    "topic_ping": "RemoteDeck/PC/ping"
   },
   "relay": {
     "pulse_short_ms": 500,

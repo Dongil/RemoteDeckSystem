@@ -8,6 +8,16 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
+// Sub-tab navigation (settings)
+document.querySelectorAll('.sub-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.sub-page').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.stab).classList.add('active');
+  });
+});
+
 // WebSocket
 let ws;
 function connectWS() {
@@ -139,59 +149,263 @@ function delSchedule(id) {
   fetch('/api/schedule?id=' + id, {method: 'DELETE'}).then(() => loadSchedules());
 }
 
-// Config
+// ═══════════════════════════════════════════
+//  Settings - Config Load / Save
+// ═══════════════════════════════════════════
+
+let _cfgCache = {};
+
 function loadConfig() {
   fetch('/api/config').then(r => r.json()).then(d => {
-    const form = document.getElementById('config-form');
-    form.innerHTML = '';
-    function addField(label, key, val) {
-      const html = '<div class="cfg-group"><label>' + label + '</label>' +
-        '<input type="text" data-key="' + key + '" value="' + (val || '') + '"></div>';
-      form.innerHTML += html;
-    }
-    addField('장치 ID', 'device_id', d.device_id);
-    addField('네트워크 모드', 'network.mode', d.network?.mode);
-    addField('이더넷 IP', 'network.ethernet.ip', d.network?.ethernet?.ip);
-    addField('게이트웨이', 'network.ethernet.gateway', d.network?.ethernet?.gateway);
-    addField('서브넷 마스크', 'network.ethernet.subnet', d.network?.ethernet?.subnet);
-    addField('DNS', 'network.ethernet.dns1', d.network?.ethernet?.dns1);
-    addField('WiFi SSID', 'network.wifi.ssid', d.network?.wifi?.ssid);
-    addField('MQTT 브로커', 'mqtt.broker', d.mqtt?.broker);
-    addField('MQTT 포트', 'mqtt.port', d.mqtt?.port);
-    addField('MQTT 사용자', 'mqtt.user', d.mqtt?.user);
-    addField('짧은 펄스 (ms)', 'relay.pulse_short_ms', d.relay?.pulse_short_ms);
-    addField('긴 펄스 (ms)', 'relay.pulse_long_ms', d.relay?.pulse_long_ms);
-    addField('폴링 주기 (ms)', 'monitor.pcled_poll_interval_ms', d.monitor?.pcled_poll_interval_ms);
-    addField('WOL 대상 MAC', 'wol_target_mac', d.wol_target_mac);
-    addField('NTP 서버', 'ntp.server', d.ntp?.server);
-    addField('시간대', 'ntp.timezone', d.ntp?.timezone);
+    _cfgCache = d;
+
+    // 장치 정보
+    document.getElementById('cfg-device-id').value = d.device_id || '';
+    document.getElementById('cfg-device-name').value = d.device_name || '';
+
+    // 네트워크 모드
+    const mode = d.network?.mode || 'ethernet';
+    document.querySelector('input[name="net-mode"][value="' + mode + '"]').checked = true;
+
+    // 이더넷
+    document.getElementById('cfg-eth-dhcp').checked = d.network?.ethernet?.dhcp || false;
+    document.getElementById('cfg-eth-ip').value = d.network?.ethernet?.ip || '';
+    document.getElementById('cfg-eth-gw').value = d.network?.ethernet?.gateway || '';
+    document.getElementById('cfg-eth-subnet').value = d.network?.ethernet?.subnet || '';
+    document.getElementById('cfg-eth-dns1').value = d.network?.ethernet?.dns1 || '';
+    document.getElementById('cfg-eth-mac').value = d.network?.ethernet?.mac || '';
+
+    // WiFi
+    document.getElementById('cfg-wifi-ssid').value = d.network?.wifi?.ssid || '';
+    document.getElementById('cfg-wifi-pw').value = d.network?.wifi?.password || '';
+    document.getElementById('cfg-wifi-dhcp').checked = d.network?.wifi?.dhcp || false;
+    document.getElementById('cfg-wifi-ip').value = d.network?.wifi?.ip || '';
+    document.getElementById('cfg-wifi-gw').value = d.network?.wifi?.gateway || '';
+    document.getElementById('cfg-wifi-subnet').value = d.network?.wifi?.subnet || '';
+    document.getElementById('cfg-wifi-dns1').value = d.network?.wifi?.dns1 || '';
+    document.getElementById('cfg-wifi-mac').value = d.network?.wifi?.mac || '';
+
+    // MQTT
+    const mqttEnabled = d.mqtt?.broker ? true : false;
+    document.getElementById('cfg-mqtt-enable').checked = mqttEnabled;
+    document.getElementById('cfg-mqtt-broker').value = d.mqtt?.broker || '';
+    document.getElementById('cfg-mqtt-port').value = d.mqtt?.port || 1883;
+    document.getElementById('cfg-mqtt-user').value = d.mqtt?.user || '';
+    document.getElementById('cfg-mqtt-pass').value = '';
+    document.getElementById('cfg-mqtt-keepalive').value = d.mqtt?.keepalive || 120;
+    document.getElementById('cfg-mqtt-pub').value = d.mqtt?.topic_pub || '';
+    document.getElementById('cfg-mqtt-sub').value = d.mqtt?.topic_sub || '';
+    document.getElementById('cfg-mqtt-ping').value = d.mqtt?.topic_ping || '';
+    toggleMQTTFields();
+
+    // 기타
+    document.getElementById('cfg-relay-short').value = d.relay?.pulse_short_ms || 500;
+    document.getElementById('cfg-relay-long').value = d.relay?.pulse_long_ms || 5000;
+    document.getElementById('cfg-mon-poll').value = d.monitor?.pcled_poll_interval_ms || 1000;
+    document.getElementById('cfg-mon-notify').checked = d.monitor?.auto_notify !== false;
+    document.getElementById('cfg-wol-mac').value = d.wol?.target_mac || '';
+    document.getElementById('cfg-ntp-server').value = d.ntp?.server || '';
+    document.getElementById('cfg-ntp-tz').value = d.ntp?.timezone || '';
   });
 }
 
-function saveConfig() {
-  if (!confirm('설정을 저장하고 장치를 재부팅하시겠습니까?')) return;
-  const inputs = document.querySelectorAll('#config-form input');
-  const cfg = {};
-  inputs.forEach(inp => {
-    const keys = inp.dataset.key.split('.');
-    let obj = cfg;
-    for (let i = 0; i < keys.length - 1; i++) {
-      if (!obj[keys[i]]) obj[keys[i]] = {};
-      obj = obj[keys[i]];
-    }
-    let val = inp.value;
-    if (!isNaN(val) && val !== '') val = Number(val);
-    obj[keys[keys.length - 1]] = val;
-  });
+// MQTT enable/disable toggle
+document.getElementById('cfg-mqtt-enable').addEventListener('change', toggleMQTTFields);
+function toggleMQTTFields() {
+  const enabled = document.getElementById('cfg-mqtt-enable').checked;
+  document.getElementById('mqtt-fields').style.opacity = enabled ? '1' : '0.4';
+  document.querySelectorAll('#mqtt-fields input').forEach(el => el.disabled = !enabled);
+}
 
+// ─── Save: Network (with reboot) ───
+function saveNetwork() {
+  if (!confirm('네트워크 설정을 저장하고 장치를 재부팅하시겠습니까?')) return;
+  const mode = document.querySelector('input[name="net-mode"]:checked').value;
+  const cfg = {
+    device_id: document.getElementById('cfg-device-id').value,
+    device_name: document.getElementById('cfg-device-name').value,
+    network: {
+      mode: mode,
+      ethernet: {
+        dhcp: document.getElementById('cfg-eth-dhcp').checked,
+        ip: document.getElementById('cfg-eth-ip').value,
+        gateway: document.getElementById('cfg-eth-gw').value,
+        subnet: document.getElementById('cfg-eth-subnet').value,
+        dns1: document.getElementById('cfg-eth-dns1').value
+      },
+      wifi: {
+        ssid: document.getElementById('cfg-wifi-ssid').value,
+        password: document.getElementById('cfg-wifi-pw').value,
+        dhcp: document.getElementById('cfg-wifi-dhcp').checked,
+        ip: document.getElementById('cfg-wifi-ip').value,
+        gateway: document.getElementById('cfg-wifi-gw').value,
+        subnet: document.getElementById('cfg-wifi-subnet').value,
+        dns1: document.getElementById('cfg-wifi-dns1').value
+      }
+    }
+  };
   fetch('/api/config', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(cfg)
-  }).then(() => {
-    alert('저장 완료! 장치가 재부팅됩니다.');
-    setTimeout(() => location.reload(), 5000);
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      fetch('/api/reboot', {method: 'POST'});
+      alert('저장 완료! 장치가 재부팅됩니다.');
+      setTimeout(() => location.reload(), 5000);
+    } else alert('저장 실패');
   });
+}
+
+// ─── Save: MQTT (no reboot) ───
+async function saveMQTT() {
+  const enabled = document.getElementById('cfg-mqtt-enable').checked;
+  let broker = document.getElementById('cfg-mqtt-broker').value;
+  // Resolve hostname to IP for ESP32 Ethernet compatibility
+  if (enabled && broker && !/^\d{1,3}(\.\d{1,3}){3}$/.test(broker)) {
+    try {
+      const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(broker) + '&type=A');
+      const dnsData = await dnsResp.json();
+      const aRecord = dnsData.Answer?.find(a => a.type === 1);
+      if (aRecord) {
+        const resolvedIP = aRecord.data;
+        if (confirm(broker + ' → ' + resolvedIP + '\nIP로 변환하여 저장하시겠습니까?\n(ESP32 Ethernet DNS 제한)')) {
+          broker = resolvedIP;
+        }
+      }
+    } catch(e) { /* DNS failed, save hostname as-is */ }
+  }
+  const cfg = {
+    mqtt: {
+      broker: enabled ? broker : '',
+      port: parseInt(document.getElementById('cfg-mqtt-port').value) || 1883,
+      user: document.getElementById('cfg-mqtt-user').value,
+      password: document.getElementById('cfg-mqtt-pass').value,
+      keepalive: parseInt(document.getElementById('cfg-mqtt-keepalive').value) || 120,
+      topic_pub: document.getElementById('cfg-mqtt-pub').value,
+      topic_sub: document.getElementById('cfg-mqtt-sub').value,
+      topic_ping: document.getElementById('cfg-mqtt-ping').value
+    }
+  };
+  fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(cfg)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) alert('MQTT 설정이 저장되었습니다.\n적용하려면 재부팅이 필요합니다.');
+    else alert('저장 실패');
+  });
+}
+
+// ─── Test: MQTT (async: POST to start, GET to poll) ───
+async function testMQTT() {
+  const el = document.getElementById('mqtt-test-result');
+  let broker = document.getElementById('cfg-mqtt-broker').value;
+  if (!broker) { el.textContent = '브로커 주소를 입력하세요'; el.className = 'test-result fail'; return; }
+  const isIP = /^\d{1,3}(\.\d{1,3}){3}$/.test(broker);
+  if (!isIP) {
+    el.textContent = 'DNS 해석 중...';
+    el.className = 'test-result';
+    // Resolve hostname via DNS lookup API (browser resolves)
+    try {
+      const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(broker) + '&type=A');
+      const dnsData = await dnsResp.json();
+      if (dnsData.Answer && dnsData.Answer.length > 0) {
+        broker = dnsData.Answer.find(a => a.type === 1)?.data || broker;
+        el.textContent = broker + '로 테스트 중...';
+      } else {
+        el.textContent = 'DNS 해석 실패: ' + broker;
+        el.className = 'test-result fail';
+        return;
+      }
+    } catch(e) {
+      el.textContent = 'DNS 해석 실패 (IP 주소를 직접 입력하세요)';
+      el.className = 'test-result fail';
+      return;
+    }
+  } else {
+    el.textContent = '연결 테스트 중...';
+    el.className = 'test-result';
+  }
+  fetch('/api/mqtttest', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      broker: broker,
+      port: parseInt(document.getElementById('cfg-mqtt-port').value) || 1883,
+      user: document.getElementById('cfg-mqtt-user').value,
+      password: document.getElementById('cfg-mqtt-pass').value
+    })
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) {
+      el.textContent = '테스트 시작 실패: ' + (d.error || '');
+      el.className = 'test-result fail';
+      return;
+    }
+    // Poll for result
+    let polls = 0;
+    const poll = setInterval(() => {
+      fetch('/api/mqtttest').then(r => r.json()).then(r => {
+        if (r.status === 'testing') {
+          polls++;
+          if (polls > 20) { // 10 seconds max
+            clearInterval(poll);
+            el.textContent = '시간 초과';
+            el.className = 'test-result fail';
+          }
+          return;
+        }
+        clearInterval(poll);
+        if (r.status === 'ok') {
+          el.textContent = '연결 성공!';
+          el.className = 'test-result ok';
+        } else {
+          el.textContent = '연결 실패';
+          el.className = 'test-result fail';
+        }
+      });
+    }, 500);
+  }).catch(() => {
+    el.textContent = '테스트 요청 실패';
+    el.className = 'test-result fail';
+  });
+}
+
+// ─── Save: Etc (no reboot) ───
+function saveEtc() {
+  const cfg = {
+    relay: {
+      pulse_short_ms: parseInt(document.getElementById('cfg-relay-short').value) || 500,
+      pulse_long_ms: parseInt(document.getElementById('cfg-relay-long').value) || 5000
+    },
+    monitor: {
+      pcled_poll_interval_ms: parseInt(document.getElementById('cfg-mon-poll').value) || 1000,
+      auto_notify: document.getElementById('cfg-mon-notify').checked
+    },
+    wol: {
+      target_mac: document.getElementById('cfg-wol-mac').value
+    },
+    ntp: {
+      server: document.getElementById('cfg-ntp-server').value,
+      timezone: document.getElementById('cfg-ntp-tz').value
+    }
+  };
+  fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(cfg)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) alert('설정이 저장되었습니다.');
+    else alert('저장 실패');
+  });
+}
+
+// Reboot device
+function rebootDevice() {
+  if (!confirm('장치를 재부팅하시겠습니까?')) return;
+  fetch('/api/reboot', {method: 'POST'});
+  alert('장치가 재부팅됩니다.');
+  setTimeout(() => location.reload(), 5000);
 }
 
 // Account Change (ID + PW)

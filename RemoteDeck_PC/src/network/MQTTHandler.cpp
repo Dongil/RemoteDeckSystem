@@ -1,4 +1,6 @@
 #include "MQTTHandler.h"
+#include <WiFi.h>
+#include <ETH.h>
 
 MQTTHandler* MQTTHandler::_instance = nullptr;
 
@@ -8,9 +10,19 @@ void MQTTHandler::begin(const MQTTConfig& config, const std::string& deviceId, C
     _instance = this;
 
     _client.setClient(netClient);
-    _client.setServer(_config.broker.c_str(), _config.port);
     _client.setCallback(_mqttCallback);
     _client.setKeepAlive(_config.keepalive);
+
+    // Set server - use IP if available, otherwise hostname
+    IPAddress brokerIP;
+    if (brokerIP.fromString(_config.broker.c_str())) {
+        _brokerIP = brokerIP;
+        _client.setServer(_brokerIP, _config.port);
+        Serial.printf("MQTT: Server set to IP %s:%d\n", _brokerIP.toString().c_str(), _config.port);
+    } else {
+        _client.setServer(_config.broker.c_str(), _config.port);
+        Serial.printf("MQTT: Server set to hostname %s:%d\n", _config.broker.c_str(), _config.port);
+    }
 
     if (!_config.broker.empty()) {
         connect();
@@ -22,7 +34,7 @@ void MQTTHandler::loop() {
 
     if (!_client.connected()) {
         unsigned long now = millis();
-        if (now - _lastRetry >= RETRY_INTERVAL && _retryCount < MAX_RETRIES) {
+        if (now - _lastRetry >= RETRY_INTERVAL && (MAX_RETRIES == 0 || _retryCount < MAX_RETRIES)) {
             _lastRetry = now;
             connect();
         }
@@ -54,6 +66,8 @@ void MQTTHandler::connect() {
         std::string subTopic = resolveTopic(_config.topicSub);
         _client.subscribe(subTopic.c_str());
         Serial.printf("MQTT: Subscribed to %s\n", subTopic.c_str());
+
+        if (_onConnected) _onConnected();
     } else {
         Serial.printf("failed (rc=%d)\n", _client.state());
         _retryCount++;

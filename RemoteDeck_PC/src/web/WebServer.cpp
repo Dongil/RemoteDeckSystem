@@ -101,10 +101,32 @@ void WebServer::setupAPI() {
             if (!_setConfig) { req->send(500); return; }
             String json((char*)data, len);
             bool ok = _setConfig(json);
-            req->send(200, "application/json",
-                ok ? "{\"ok\":true,\"reboot_required\":true}" : "{\"ok\":false}");
+            req->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
         }
     );
+
+    // POST /api/mqtttest - start async MQTT test
+    _server->on("/api/mqtttest", HTTP_POST, [](AsyncWebServerRequest* req) {},
+        NULL,
+        [this](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
+            if (!requireAuth(req)) return;
+            if (!_startMQTTTest) {
+                req->send(200, "application/json", "{\"ok\":false,\"error\":\"not supported\"}");
+                return;
+            }
+            String json((char*)data, len);
+            bool started = _startMQTTTest(json);
+            req->send(200, "application/json",
+                started ? "{\"ok\":true,\"status\":\"testing\"}" : "{\"ok\":false,\"error\":\"invalid params\"}");
+        }
+    );
+
+    // GET /api/mqtttest - poll MQTT test result
+    _server->on("/api/mqtttest", HTTP_GET, [this](AsyncWebServerRequest* req) {
+        if (!requireAuth(req)) return;
+        if (!_getMQTTTest) { req->send(200, "application/json", "{\"status\":\"idle\"}"); return; }
+        req->send(200, "application/json", _getMQTTTest());
+    });
 
     // POST /api/schedule (auth required)
     _server->on("/api/schedule", HTTP_POST, [](AsyncWebServerRequest* req) {},

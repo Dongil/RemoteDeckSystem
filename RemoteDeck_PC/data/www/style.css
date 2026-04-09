@@ -33,5 +33,20 @@ input[type="file"]{margin:8px 0;color:#aaa}
 .log-entry{padding:3px 0;border-bottom:1px solid #222}
 .log-entry .time{color:#888}
 .log-entry .event{color:#0ff}
-#config-form .cfg-group{margin:10px 0}
-#config-form label{display:block;font-size:12px;color:#888;margin:6px 0 2px}
+.sub-tabs{display:flex;background:#0d1b3e;border-radius:8px 8px 0 0;overflow-x:auto;margin-bottom:0}
+.sub-tab{flex:1;padding:10px 12px;background:none;border:none;color:#666;cursor:pointer;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;transition:all .2s}
+.sub-tab.active{color:#0ff;border-bottom-color:#0ff;background:#16213e}
+.sub-tab:hover{color:#aaa}
+.sub-page{display:none}
+.sub-page.active{display:block}
+.cfg-group{margin:8px 0}
+.cfg-group>label{display:block;font-size:12px;color:#888;margin:0 0 3px}
+.radio-group{display:flex;gap:20px;padding:4px 0}
+.radio-label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:#e0e0e0}
+.radio-label input[type="radio"]{accent-color:#0ff}
+input[type="password"]{background:#0a0e27;border:1px solid #333;color:#e0e0e0;padding:8px;border-radius:4px;margin:4px 0;font-size:13px;width:100%;max-width:300px}
+input[type="checkbox"]{accent-color:#0ff}
+.btn-row{display:flex;gap:8px;margin:12px 0 4px;flex-wrap:wrap}
+.test-result{margin:8px 0;font-size:12px;min-height:18px}
+.test-result.ok{color:#0f0}
+.test-result.fail{color:#f44}

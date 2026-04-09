@@ -18,7 +18,9 @@ public:
     void publishStatus(const StatusConfig& status);
 
     using CommandCallback = std::function<void(const char* payload, unsigned int length)>;
+    using ConnectedCallback = std::function<void()>;
     void setOnCommand(CommandCallback cb) { _onCommand = cb; }
+    void setOnConnected(ConnectedCallback cb) { _onConnected = cb; }
 
     void disconnect();
 
@@ -26,12 +28,14 @@ private:
     MQTTConfig _config;
     std::string _deviceId;
     PubSubClient _client;
+    IPAddress _brokerIP;
     CommandCallback _onCommand = nullptr;
+    ConnectedCallback _onConnected = nullptr;
 
     int _retryCount = 0;
-    static constexpr int MAX_RETRIES = 5;
+    static constexpr int MAX_RETRIES = 0; // 0 = unlimited retries
     unsigned long _lastRetry = 0;
-    static constexpr unsigned long RETRY_INTERVAL = 5000;
+    static constexpr unsigned long RETRY_INTERVAL = 10000;
 
     void connect();
     std::string resolveTopic(const std::string& tmpl) const;

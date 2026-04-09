@@ -22,6 +22,8 @@ public:
     using RebootHandler = std::function<void()>;
     using LogGetter = std::function<String()>;
     using AuthChanger = std::function<bool(const String& curPass, const String& newUser, const String& newPass)>;
+    using MQTTTestStarter = std::function<bool(const String& json)>;
+    using MQTTTestGetter = std::function<String()>;
 
     void setStatusGetter(StatusGetter cb) { _getStatus = cb; }
     void setRelayHandler(RelayHandler cb) { _handleRelay = cb; }
@@ -34,6 +36,8 @@ public:
     void setRebootHandler(RebootHandler cb) { _handleReboot = cb; }
     void setLogGetter(LogGetter cb) { _getLog = cb; }
     void setAuthChanger(AuthChanger cb) { _changeAuth = cb; }
+    void setMQTTTestStarter(MQTTTestStarter cb) { _startMQTTTest = cb; }
+    void setMQTTTestGetter(MQTTTestGetter cb) { _getMQTTTest = cb; }
 
     OTAHandler& ota() { return _ota; }
 
@@ -54,6 +58,8 @@ private:
     RebootHandler _handleReboot = nullptr;
     LogGetter _getLog = nullptr;
     AuthChanger _changeAuth = nullptr;
+    MQTTTestStarter _startMQTTTest = nullptr;
+    MQTTTestGetter _getMQTTTest = nullptr;
 
     bool requireAuth(AsyncWebServerRequest* req);
     void setupStaticFiles();
