@@ -98,6 +98,7 @@
     <button class="sub-tab" data-stab="stab-mqtt">MQTT</button>
     <button class="sub-tab" data-stab="stab-account">계정</button>
     <button class="sub-tab" data-stab="stab-etc">기타</button>
+    <button class="sub-tab" data-stab="stab-webreq">Web Request</button>
   </div>
 
   <!-- 네트워크 설정 -->
@@ -201,6 +202,39 @@
     <div class="btn-row">
       <button onclick="saveEtc()">저장</button>
       <button onclick="rebootDevice()">재부팅</button>
+    </div>
+  </div>
+
+  <!-- Web Request 설정 -->
+  <div id="stab-webreq" class="sub-page">
+    <div class="card">
+      <h2>Web Request 설정</h2>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-wr-enable"> Web Request 사용</label></div>
+      <div id="wr-fields">
+        <div class="cfg-group"><label>타임아웃 (ms)</label><input type="number" id="cfg-wr-timeout" value="5000"></div>
+        <div class="cfg-group"><label style="color:#666;font-size:11px">플레이스홀더: [device_id] [device_name] [ip] [mac] [event] [value]</label></div>
+        <h3>릴레이 1</h3>
+        <div class="cfg-group"><label>ON URL</label><input type="text" id="cfg-wr-relay1-on" style="max-width:100%"></div>
+        <div class="cfg-group"><label>OFF URL</label><input type="text" id="cfg-wr-relay1-off" style="max-width:100%"></div>
+        <h3>릴레이 2</h3>
+        <div class="cfg-group"><label>ON URL</label><input type="text" id="cfg-wr-relay2-on" style="max-width:100%"></div>
+        <div class="cfg-group"><label>OFF URL</label><input type="text" id="cfg-wr-relay2-off" style="max-width:100%"></div>
+        <h3>PC 전원 (PCLED)</h3>
+        <div class="cfg-group"><label>ON URL</label><input type="text" id="cfg-wr-pcled-on" style="max-width:100%"></div>
+        <div class="cfg-group"><label>OFF URL</label><input type="text" id="cfg-wr-pcled-off" style="max-width:100%"></div>
+        <h3>GPIO 1</h3>
+        <div class="cfg-group"><label>HIGH URL</label><input type="text" id="cfg-wr-gpio1-high" style="max-width:100%"></div>
+        <div class="cfg-group"><label>LOW URL</label><input type="text" id="cfg-wr-gpio1-low" style="max-width:100%"></div>
+        <h3>GPIO 2</h3>
+        <div class="cfg-group"><label>HIGH URL</label><input type="text" id="cfg-wr-gpio2-high" style="max-width:100%"></div>
+        <div class="cfg-group"><label>LOW URL</label><input type="text" id="cfg-wr-gpio2-low" style="max-width:100%"></div>
+        <h3>GPIO 3</h3>
+        <div class="cfg-group"><label>HIGH URL</label><input type="text" id="cfg-wr-gpio3-high" style="max-width:100%"></div>
+        <div class="cfg-group"><label>LOW URL</label><input type="text" id="cfg-wr-gpio3-low" style="max-width:100%"></div>
+      </div>
+      <div class="btn-row">
+        <button onclick="saveWebRequest()">저장</button>
+      </div>
     </div>
   </div>
 </section>

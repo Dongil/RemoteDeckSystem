@@ -54,7 +54,23 @@
     "timezone": "KST-9"
   },
   "firmware": {
-    "version": "2.1.0",
-    "date": "2026-04-08"
+    "version": "2.2.0",
+    "date": "2026-04-10"
+  },
+  "web_request": {
+    "enabled": false,
+    "timeout_ms": 5000,
+    "relay1_on": "",
+    "relay1_off": "",
+    "relay2_on": "",
+    "relay2_off": "",
+    "pcled_on": "",
+    "pcled_off": "",
+    "gpio1_high": "",
+    "gpio1_low": "",
+    "gpio2_high": "",
+    "gpio2_low": "",
+    "gpio3_high": "",
+    "gpio3_low": ""
   }
 }

@@ -8,7 +8,7 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
         return false;
     }
 
-    StaticJsonDocument<2048> doc;
+    StaticJsonDocument<4096> doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -68,19 +68,36 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.ntp.timezone = doc["ntp"]["timezone"] | "KST-9";
 
     // Firmware
-    config.firmware.version = doc["firmware"]["version"] | "2.1.0";
-    config.firmware.date = doc["firmware"]["date"] | "2026-04-08";
+    config.firmware.version = doc["firmware"]["version"] | "2.2.0";
+    config.firmware.date = doc["firmware"]["date"] | "2026-04-10";
 
     // Auth
     config.auth.user = doc["auth"]["user"] | "admin";
     config.auth.pass = doc["auth"]["pass"] | "12345";
+
+    // Web Request
+    JsonObject wr = doc["web_request"];
+    config.webRequest.enabled = wr["enabled"] | false;
+    config.webRequest.timeoutMs = wr["timeout_ms"] | 5000;
+    config.webRequest.relay1_on = wr["relay1_on"] | "";
+    config.webRequest.relay1_off = wr["relay1_off"] | "";
+    config.webRequest.relay2_on = wr["relay2_on"] | "";
+    config.webRequest.relay2_off = wr["relay2_off"] | "";
+    config.webRequest.pcled_on = wr["pcled_on"] | "";
+    config.webRequest.pcled_off = wr["pcled_off"] | "";
+    config.webRequest.gpio1_high = wr["gpio1_high"] | "";
+    config.webRequest.gpio1_low = wr["gpio1_low"] | "";
+    config.webRequest.gpio2_high = wr["gpio2_high"] | "";
+    config.webRequest.gpio2_low = wr["gpio2_low"] | "";
+    config.webRequest.gpio3_high = wr["gpio3_high"] | "";
+    config.webRequest.gpio3_low = wr["gpio3_low"] | "";
 
     Serial.printf("ConfigManager: Loaded config for %s\n", config.deviceId.c_str());
     return true;
 }
 
 bool ConfigManager::save(const DeviceConfig& config, const char* path) {
-    StaticJsonDocument<2048> doc;
+    StaticJsonDocument<4096> doc;
 
     doc["device_id"] = config.deviceId;
     doc["device_name"] = config.deviceName;
@@ -147,6 +164,23 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     auth["user"] = config.auth.user;
     auth["pass"] = config.auth.pass;
 
+    // Web Request
+    JsonObject wr = doc.createNestedObject("web_request");
+    wr["enabled"] = config.webRequest.enabled;
+    wr["timeout_ms"] = config.webRequest.timeoutMs;
+    wr["relay1_on"] = config.webRequest.relay1_on;
+    wr["relay1_off"] = config.webRequest.relay1_off;
+    wr["relay2_on"] = config.webRequest.relay2_on;
+    wr["relay2_off"] = config.webRequest.relay2_off;
+    wr["pcled_on"] = config.webRequest.pcled_on;
+    wr["pcled_off"] = config.webRequest.pcled_off;
+    wr["gpio1_high"] = config.webRequest.gpio1_high;
+    wr["gpio1_low"] = config.webRequest.gpio1_low;
+    wr["gpio2_high"] = config.webRequest.gpio2_high;
+    wr["gpio2_low"] = config.webRequest.gpio2_low;
+    wr["gpio3_high"] = config.webRequest.gpio3_high;
+    wr["gpio3_low"] = config.webRequest.gpio3_low;
+
     File file = SPIFFS.open(path, "w");
     if (!file) {
         Serial.printf("ConfigManager: Failed to open %s for writing\n", path);
@@ -195,8 +229,10 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.wol.targetMac = "";
     config.ntp.server = "pool.ntp.org";
     config.ntp.timezone = "KST-9";
-    config.firmware.version = "2.1.0";
-    config.firmware.date = "2026-04-08";
+    config.firmware.version = "2.2.0";
+    config.firmware.date = "2026-04-10";
     config.auth.user = "admin";
     config.auth.pass = "12345";
+    // Web Request defaults (disabled)
+    config.webRequest = WebRequestConfig();
 }

@@ -3,10 +3,6 @@
 #include <PubSubClient.h>
 #include <functional>
 #include "config/DeviceConfig.h"
-#include "config/StatusConfig.h"
-#include "utils/JsonUtils.h"
-
-class NetworkManager;
 
 class MQTTHandler {
 public:
@@ -15,7 +11,6 @@ public:
 
     bool isConnected();
     void publish(const char* payload);
-    void publishStatus(const StatusConfig& status);
 
     using CommandCallback = std::function<void(const char* payload, unsigned int length)>;
     using ConnectedCallback = std::function<void()>;

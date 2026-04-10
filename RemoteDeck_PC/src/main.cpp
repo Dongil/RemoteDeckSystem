@@ -2,12 +2,11 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 #include "config/PinConfig.h"
 #include "config/DeviceConfig.h"
 #include "config/ConfigManager.h"
-#include "config/CommandConfig.h"
-#include "config/StatusConfig.h"
 
 #include "control/RelayController.h"
 #include "control/PCMonitor.h"
@@ -18,12 +17,12 @@
 #include "network/MQTTHandler.h"
 #include "network/UDPDiscovery.h"
 #include "network/NTPSync.h"
+#include "network/WebRequestHandler.h"
 
 #include "web/WebServer.h"
 
 #include "serial/RS485Handler.h"
 
-#include "utils/JsonUtils.h"
 #include "utils/Logger.h"
 
 // ─── MQTT Test State ────────────────────────────────
@@ -49,6 +48,7 @@ UDPDiscovery udpDiscovery;
 NTPSync ntpSync;
 WebServer webServer;
 RS485Handler rs485Handler;
+WebRequestHandler webRequestHandler;
 Logger logger;
 
 // ─── STATUS2 network activity blink ─────────────────
@@ -60,41 +60,101 @@ void blinkStatus2() {
 }
 
 // ─── Forward declarations ───────────────────────────
-void processCommand(const CommandConfig& cmd, const char* source);
-StatusSetting getStatus(const std::string& type, int sequence);
-void sendStatus(const StatusConfig& status);
-void sendFullStatus();
+void processCommand(const char* json, const char* source);
 String buildStatusJson();
 String buildConfigJson();
+
+// ─── v2.2 Event JSON builders ───────────────────────
+
+String buildOnlineEvent() {
+    StaticJsonDocument<256> doc;
+    doc["id"] = config.deviceId;
+    doc["event"] = "online";
+    doc["ip"] = networkManager.localIP().toString();
+    doc["name"] = config.deviceName;
+    doc["fw"] = config.firmware.version;
+    String out; serializeJson(doc, out); return out;
+}
+
+String buildRelayEvent() {
+    StaticJsonDocument<128> doc;
+    doc["id"] = config.deviceId;
+    doc["event"] = "relay";
+    doc["relay1"] = relayController.getRelay(1) ? 1 : 0;
+    doc["relay2"] = relayController.getRelay(2) ? 1 : 0;
+    String out; serializeJson(doc, out); return out;
+}
+
+String buildPCLedEvent() {
+    StaticJsonDocument<128> doc;
+    doc["id"] = config.deviceId;
+    doc["event"] = "pcled";
+    doc["pc_on"] = pcMonitor.isPCOn();
+    String out; serializeJson(doc, out); return out;
+}
+
+String buildGPIOEvent() {
+    StaticJsonDocument<128> doc;
+    doc["id"] = config.deviceId;
+    doc["event"] = "gpio";
+    doc["gpio1"] = digitalRead(PIN_GPIO1);
+    doc["gpio2"] = digitalRead(PIN_GPIO2);
+    doc["gpio3"] = digitalRead(PIN_GPIO3);
+    String out; serializeJson(doc, out); return out;
+}
+
+String buildFullEvent() {
+    StaticJsonDocument<512> doc;
+    doc["id"] = config.deviceId;
+    doc["event"] = "full";
+    doc["ip"] = networkManager.localIP().toString();
+    doc["name"] = config.deviceName;
+    doc["fw"] = config.firmware.version;
+    doc["relay1"] = relayController.getRelay(1) ? 1 : 0;
+    doc["relay2"] = relayController.getRelay(2) ? 1 : 0;
+    doc["pc_on"] = pcMonitor.isPCOn();
+    doc["gpio1"] = digitalRead(PIN_GPIO1);
+    doc["gpio2"] = digitalRead(PIN_GPIO2);
+    doc["gpio3"] = digitalRead(PIN_GPIO3);
+    doc["uptime"] = ntpSync.getUptime();
+    doc["mqtt"] = mqttHandler.isConnected();
+    String out; serializeJson(doc, out); return out;
+}
+
+// ─── Unified publish (MQTT + RS485) ─────────────────
+
+void publishEvent(const String& json) {
+    blinkStatus2();
+    mqttHandler.publish(json.c_str());
+    rs485Handler.send(json.c_str());
+}
 
 // ─── Callbacks ──────────────────────────────────────
 
 void onRS485Command(const char* json) {
     blinkStatus2();
-    CommandConfig cmd;
-    JsonUtils::deserializeCommandConfig(cmd, String(json));
-    processCommand(cmd, "RS485");
+    processCommand(json, "RS485");
 }
 
 void onMQTTCommand(const char* payload, unsigned int length) {
     blinkStatus2();
-    CommandConfig cmd;
-    JsonUtils::deserializeCommandConfig(cmd, String(payload));
-    processCommand(cmd, "MQTT");
+    processCommand(payload, "MQTT");
 }
 
 void onRelayChange(uint8_t relay, bool state) {
     logger.log("RELAY", (String("Relay") + relay + (state ? " ON" : " OFF")).c_str());
-    StatusConfig status(config.deviceId, "RELAY", relay, state ? 1 : 0, "null");
-    sendStatus(status);
+    publishEvent(buildRelayEvent());
     webServer.ws().broadcastStatus(buildStatusJson().c_str());
+    // Web Request
+    if (relay == 1) webRequestHandler.fire(state ? "relay1_on" : "relay1_off", state ? 1 : 0);
+    else            webRequestHandler.fire(state ? "relay2_on" : "relay2_off", state ? 1 : 0);
 }
 
 void onPCStateChange(bool pcOn) {
     logger.log("PCLED", pcOn ? "PC ON" : "PC OFF");
-    StatusConfig status(config.deviceId, "PCLED", 1, pcOn ? 1 : 0, "null");
-    sendStatus(status);
+    publishEvent(buildPCLedEvent());
     webServer.ws().broadcastStatus(buildStatusJson().c_str());
+    webRequestHandler.fire(pcOn ? "pcled_on" : "pcled_off", pcOn ? 1 : 0);
 }
 
 void onScheduleAction(uint8_t relay, const std::string& action) {
@@ -109,8 +169,7 @@ void onScheduleAction(uint8_t relay, const std::string& action) {
 }
 
 bool onUDPConfig(const char* jsonConfig) {
-    // Merge incoming config into current config and save
-    StaticJsonDocument<2048> doc;
+    StaticJsonDocument<4096> doc;
     if (deserializeJson(doc, jsonConfig)) return false;
 
     // Update fields that are present
@@ -166,6 +225,23 @@ bool onUDPConfig(const char* jsonConfig) {
         if (ntpObj.containsKey("server")) config.ntp.server = ntpObj["server"].as<std::string>();
         if (ntpObj.containsKey("timezone")) config.ntp.timezone = ntpObj["timezone"].as<std::string>();
     }
+    if (doc.containsKey("web_request")) {
+        JsonObject wr = doc["web_request"];
+        if (wr.containsKey("enabled"))     config.webRequest.enabled = wr["enabled"];
+        if (wr.containsKey("timeout_ms"))  config.webRequest.timeoutMs = wr["timeout_ms"];
+        if (wr.containsKey("relay1_on"))   config.webRequest.relay1_on = wr["relay1_on"].as<std::string>();
+        if (wr.containsKey("relay1_off"))  config.webRequest.relay1_off = wr["relay1_off"].as<std::string>();
+        if (wr.containsKey("relay2_on"))   config.webRequest.relay2_on = wr["relay2_on"].as<std::string>();
+        if (wr.containsKey("relay2_off"))  config.webRequest.relay2_off = wr["relay2_off"].as<std::string>();
+        if (wr.containsKey("pcled_on"))    config.webRequest.pcled_on = wr["pcled_on"].as<std::string>();
+        if (wr.containsKey("pcled_off"))   config.webRequest.pcled_off = wr["pcled_off"].as<std::string>();
+        if (wr.containsKey("gpio1_high"))  config.webRequest.gpio1_high = wr["gpio1_high"].as<std::string>();
+        if (wr.containsKey("gpio1_low"))   config.webRequest.gpio1_low = wr["gpio1_low"].as<std::string>();
+        if (wr.containsKey("gpio2_high"))  config.webRequest.gpio2_high = wr["gpio2_high"].as<std::string>();
+        if (wr.containsKey("gpio2_low"))   config.webRequest.gpio2_low = wr["gpio2_low"].as<std::string>();
+        if (wr.containsKey("gpio3_high"))  config.webRequest.gpio3_high = wr["gpio3_high"].as<std::string>();
+        if (wr.containsKey("gpio3_low"))   config.webRequest.gpio3_low = wr["gpio3_low"].as<std::string>();
+    }
 
     return ConfigManager::save(config);
 }
@@ -176,105 +252,45 @@ void onUDPReboot() {
     ESP.restart();
 }
 
-// ─── Command processor ─────────────────────────────
+// ─── v2.2 Command processor (direct JSON parsing) ──
 
-void processCommand(const CommandConfig& cmd, const char* source) {
-    logger.log("CMD", (cmd.command + " seq=" + String(cmd.sequence).c_str() +
-                       " from " + source).c_str());
+void processCommand(const char* json, const char* source) {
+    StaticJsonDocument<256> doc;
+    if (deserializeJson(doc, json)) {
+        Serial.printf("CMD parse error from %s: %s\n", source, json);
+        return;
+    }
 
-    if (cmd.command == "RELAY") {
-        relayController.setRelay(cmd.sequence, cmd.data == 1);
+    const char* cmd = doc["cmd"] | "";
+    logger.log("CMD", (String(cmd) + " from " + source).c_str());
 
-    } else if (cmd.command == "PULSE") {
-        uint16_t duration = cmd.data > 0 ? cmd.data : config.relay.pulseShortMs;
-        relayController.pulse(cmd.sequence, duration);
+    if (strcmp(cmd, "relay") == 0) {
+        uint8_t relay = doc["relay"] | 1;
+        const char* state = doc["state"] | "on";
+        relayController.setRelay(relay, strcmp(state, "on") == 0);
 
-    } else if (cmd.command == "PCLED") {
-        StatusConfig status(config.deviceId, "PCLED", 1,
-                            pcMonitor.isPCOn() ? 1 : 0, "null");
-        sendStatus(status);
+    } else if (strcmp(cmd, "pulse") == 0) {
+        uint8_t relay = doc["relay"] | 1;
+        uint16_t duration = doc["duration"] | config.relay.pulseShortMs;
+        relayController.pulse(relay, duration);
 
-    } else if (cmd.command == "GETGPIO") {
-        StatusConfig status(config.deviceId, getStatus("GPIO", 1), "null");
-        status.addStatus(getStatus("GPIO", 2));
-        status.addStatus(getStatus("GPIO", 3));
-        sendStatus(status);
+    } else if (strcmp(cmd, "status") == 0) {
+        String json = buildFullEvent();
+        publishEvent(json);
 
-    } else if (cmd.command == "GETSTATUS") {
-        sendFullStatus();
+    } else if (strcmp(cmd, "wol") == 0) {
+        const char* mac = doc["mac"] | "";
+        if (strlen(mac) > 0) wolSender.send(mac);
+        else wolSender.sendDefault();
 
-    } else if (cmd.command == "WOL") {
-        if (cmd.message != "null" && !cmd.message.empty()) {
-            wolSender.send(cmd.message.c_str());
-        } else {
-            wolSender.sendDefault();
-        }
-
-    } else if (cmd.command == "WIFION" || cmd.command == "WIFIOFF") {
-        // v2.1: network mode is fixed by config, report current state
-        bool connected = networkManager.isConnected();
-        StatusConfig status(config.deviceId, connected ? "WIFION" : "WIFIOFF", 1,
-                            connected ? 1 : 0, networkManager.localIP().toString().c_str());
-        sendStatus(status);
-
-    } else if (cmd.command == "REBOOT") {
+    } else if (strcmp(cmd, "reboot") == 0) {
         logger.log("REBOOT", source);
         delay(1000);
         ESP.restart();
     }
 }
 
-// ─── Status helpers ─────────────────────────────────
-
-StatusSetting getStatus(const std::string& type, int sequence) {
-    StatusSetting s;
-    s.type = type;
-    s.sequence = sequence;
-
-    if (type == "RELAY") {
-        s.data = relayController.getRelay(sequence) ? 1 : 0;
-    } else if (type == "GPIO") {
-        uint8_t pin = (sequence == 1) ? PIN_GPIO1 : (sequence == 2) ? PIN_GPIO2 : PIN_GPIO3;
-        s.data = digitalRead(pin);
-    } else if (type == "PCLED") {
-        s.data = pcMonitor.isPCOn() ? 1 : 0;
-    } else if (type == "ONLINE") {
-        s.data = 1;
-    }
-    return s;
-}
-
-void sendStatus(const StatusConfig& status) {
-    blinkStatus2();
-
-    // MQTT
-    mqttHandler.publishStatus(status);
-
-    // RS485
-    String json;
-    if (JsonUtils::serializeStatusConfig(status, json)) {
-        rs485Handler.send(json.c_str());
-    }
-}
-
-void sendFullStatus() {
-    // Part 1: ONLINE + PCLED
-    StatusConfig s1(config.deviceId, getStatus("ONLINE", 1),
-                    networkManager.localIP().toString().c_str());
-    s1.addStatus(getStatus("PCLED", 1));
-    sendStatus(s1);
-
-    // Part 2: RELAYs
-    StatusConfig s2(config.deviceId, getStatus("RELAY", 1), "null");
-    s2.addStatus(getStatus("RELAY", 2));
-    sendStatus(s2);
-
-    // Part 3: GPIOs
-    StatusConfig s3(config.deviceId, getStatus("GPIO", 1), "null");
-    s3.addStatus(getStatus("GPIO", 2));
-    s3.addStatus(getStatus("GPIO", 3));
-    sendStatus(s3);
-}
+// ─── WebSocket status (internal, unchanged) ─────────
 
 String buildStatusJson() {
     StaticJsonDocument<512> doc;
@@ -301,7 +317,7 @@ String buildStatusJson() {
 }
 
 String buildConfigJson() {
-    StaticJsonDocument<2048> doc;
+    StaticJsonDocument<4096> doc;
     doc["device_id"] = config.deviceId;
     doc["device_name"] = config.deviceName;
     doc["product"] = config.product;
@@ -323,7 +339,7 @@ String buildConfigJson() {
     wifi["subnet"] = config.network.wifiSubnet;
     wifi["dns1"] = config.network.wifiDns1;
     wifi["mac"] = config.network.wifiMac;
-    wifi["password"] = config.network.wifiPassword;  // IPSetupTool needs this
+    wifi["password"] = config.network.wifiPassword;
 
     JsonObject mq = doc.createNestedObject("mqtt");
     mq["broker"] = config.mqtt.broker;
@@ -353,8 +369,24 @@ String buildConfigJson() {
     fw["version"] = config.firmware.version;
     fw["date"] = config.firmware.date;
 
-    // Auth (user only, password masked)
     doc["auth_user"] = config.auth.user;
+
+    // Web Request
+    JsonObject wr = doc.createNestedObject("web_request");
+    wr["enabled"] = config.webRequest.enabled;
+    wr["timeout_ms"] = config.webRequest.timeoutMs;
+    wr["relay1_on"] = config.webRequest.relay1_on;
+    wr["relay1_off"] = config.webRequest.relay1_off;
+    wr["relay2_on"] = config.webRequest.relay2_on;
+    wr["relay2_off"] = config.webRequest.relay2_off;
+    wr["pcled_on"] = config.webRequest.pcled_on;
+    wr["pcled_off"] = config.webRequest.pcled_off;
+    wr["gpio1_high"] = config.webRequest.gpio1_high;
+    wr["gpio1_low"] = config.webRequest.gpio1_low;
+    wr["gpio2_high"] = config.webRequest.gpio2_high;
+    wr["gpio2_low"] = config.webRequest.gpio2_low;
+    wr["gpio3_high"] = config.webRequest.gpio3_high;
+    wr["gpio3_low"] = config.webRequest.gpio3_low;
 
     String output;
     serializeJson(doc, output);
@@ -381,9 +413,8 @@ void setup() {
     digitalWrite(PIN_STATUS2, LOW);
 
     // ── Factory Reset Check ──
-    // Short GPIO1 (pin 12) to GND during boot for 3 seconds = reset to factory defaults
     pinMode(PIN_GPIO1, INPUT_PULLUP);
-    delay(100);  // Let pullup stabilize
+    delay(100);
     if (digitalRead(PIN_GPIO1) == LOW) {
         Serial.println("*** GPIO1 LOW detected - Hold 3 seconds for factory reset ***");
         Serial.println("*** STATUS1 LED blinking... Release to cancel ***");
@@ -399,7 +430,6 @@ void setup() {
             ConfigManager::loadDefaults(config);
             ConfigManager::save(config);
             Serial.println("*** Config reset to factory defaults (IP: 192.168.1.200) ***");
-            // STATUS1 solid ON for 2 seconds to indicate success
             digitalWrite(PIN_STATUS1, HIGH);
             Serial.println("*** Remove the jumper wire now! Rebooting in 5 seconds... ***");
             delay(5000);
@@ -421,7 +451,6 @@ void setup() {
     pinMode(PIN_GPIO1, INPUT);
     pinMode(PIN_GPIO2, INPUT);
     pinMode(PIN_GPIO3, INPUT);
-    // STATUS1/2 already initialized above (before factory reset check)
 
     // Network v2.1: single mode (ethernet OR wifi STA), non-blocking
     networkManager.setOnConnected([]() {
@@ -469,15 +498,23 @@ void setup() {
     // MQTT callbacks
     mqttHandler.setOnCommand(onMQTTCommand);
     mqttHandler.setOnConnected([]() {
-        StatusConfig online(config.deviceId, "ONLINE", 1, 1,
-                            networkManager.localIP().toString().c_str());
-        mqttHandler.publishStatus(online);
+        String online = buildOnlineEvent();
+        mqttHandler.publish(online.c_str());
         logger.log("MQTT", "Connected, ONLINE published");
     });
 
     // Relay/PC callbacks
     relayController.setOnChange(onRelayChange);
     pcMonitor.setOnChange(onPCStateChange);
+
+    // Web Request
+    webRequestHandler.begin(&config.webRequest, &config);
+    webRequestHandler.setIPGetter([]() -> String {
+        return networkManager.localIP().toString();
+    });
+    webRequestHandler.setMACGetter([]() -> String {
+        return String(networkManager.macAddress().c_str());
+    });
 
     // Web Server
     webServer.setStatusGetter(buildStatusJson);
@@ -534,10 +571,9 @@ void setup() {
         strlcpy(mqttTestState.pass, doc["password"] | "", sizeof(mqttTestState.pass));
         if (strlen(mqttTestState.broker) == 0) return false;
 
-        // Must be an IP address (DNS not supported in test mode)
         if (!mqttTestState.ip.fromString(mqttTestState.broker)) return false;
 
-        mqttTestState.result = -2; // loop() will launch task
+        mqttTestState.result = -2;
         return true;
     });
     webServer.setMQTTTestGetter([]() -> String {
@@ -555,19 +591,15 @@ void setup() {
     });
     webServer.begin(WEB_PORT, &config.auth);
 
-    // Send ONLINE status via RS485
-    StatusConfig onlineStatus(config.deviceId, "ONLINE", 0, 0, "null");
-    String json;
-    if (JsonUtils::serializeStatusConfig(onlineStatus, json)) {
-        rs485Handler.send(json.c_str());
-    }
+    // Send ONLINE event via RS485
+    rs485Handler.send(buildOnlineEvent().c_str());
 
     if (networkManager.isConnected()) {
         digitalWrite(PIN_STATUS1, HIGH);
     }
 
     logger.log("SYSTEM", "Boot complete");
-    Serial.println("=== RemoteDeck PC Power Manager v2.1 ===");
+    Serial.println("=== RemoteDeck PC Power Manager v2.2 ===");
     Serial.printf("    Mode: %s\n", config.network.mode.c_str());
     if (networkManager.isConnected()) {
         Serial.printf("    Primary IP: %s\n", networkManager.localIP().toString().c_str());

@@ -62,6 +62,23 @@ struct AuthConfig {
     std::string pass;   // default: "12345"
 };
 
+struct WebRequestConfig {
+    bool enabled = false;
+    uint16_t timeoutMs = 5000;
+    std::string relay1_on;
+    std::string relay1_off;
+    std::string relay2_on;
+    std::string relay2_off;
+    std::string pcled_on;
+    std::string pcled_off;
+    std::string gpio1_high;
+    std::string gpio1_low;
+    std::string gpio2_high;
+    std::string gpio2_low;
+    std::string gpio3_high;
+    std::string gpio3_low;
+};
+
 struct DeviceConfig {
     std::string deviceId;
     std::string deviceName;  // 사용자가 지정하는 장치 이름
@@ -74,6 +91,7 @@ struct DeviceConfig {
     NTPConfig ntp;
     FirmwareInfo firmware;
     AuthConfig auth;
+    WebRequestConfig webRequest;
 };
 
 constexpr const char* CONFIG_PATH    = "/deviceconfig.json";

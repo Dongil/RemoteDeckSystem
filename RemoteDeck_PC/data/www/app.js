@@ -198,6 +198,23 @@ function loadConfig() {
     document.getElementById('cfg-mqtt-ping').value = d.mqtt?.topic_ping || '';
     toggleMQTTFields();
 
+    // Web Request
+    document.getElementById('cfg-wr-enable').checked = d.web_request?.enabled || false;
+    document.getElementById('cfg-wr-timeout').value = d.web_request?.timeout_ms || 5000;
+    document.getElementById('cfg-wr-relay1-on').value = d.web_request?.relay1_on || '';
+    document.getElementById('cfg-wr-relay1-off').value = d.web_request?.relay1_off || '';
+    document.getElementById('cfg-wr-relay2-on').value = d.web_request?.relay2_on || '';
+    document.getElementById('cfg-wr-relay2-off').value = d.web_request?.relay2_off || '';
+    document.getElementById('cfg-wr-pcled-on').value = d.web_request?.pcled_on || '';
+    document.getElementById('cfg-wr-pcled-off').value = d.web_request?.pcled_off || '';
+    document.getElementById('cfg-wr-gpio1-high').value = d.web_request?.gpio1_high || '';
+    document.getElementById('cfg-wr-gpio1-low').value = d.web_request?.gpio1_low || '';
+    document.getElementById('cfg-wr-gpio2-high').value = d.web_request?.gpio2_high || '';
+    document.getElementById('cfg-wr-gpio2-low').value = d.web_request?.gpio2_low || '';
+    document.getElementById('cfg-wr-gpio3-high').value = d.web_request?.gpio3_high || '';
+    document.getElementById('cfg-wr-gpio3-low').value = d.web_request?.gpio3_low || '';
+    toggleWRFields();
+
     // 기타
     document.getElementById('cfg-relay-short').value = d.relay?.pulse_short_ms || 500;
     document.getElementById('cfg-relay-long').value = d.relay?.pulse_long_ms || 5000;
@@ -396,6 +413,44 @@ function saveEtc() {
     body: JSON.stringify(cfg)
   }).then(r => r.json()).then(d => {
     if (d.ok) alert('설정이 저장되었습니다.');
+    else alert('저장 실패');
+  });
+}
+
+// Web Request enable/disable toggle
+document.getElementById('cfg-wr-enable').addEventListener('change', toggleWRFields);
+function toggleWRFields() {
+  const enabled = document.getElementById('cfg-wr-enable').checked;
+  document.getElementById('wr-fields').style.opacity = enabled ? '1' : '0.4';
+  document.querySelectorAll('#wr-fields input').forEach(el => el.disabled = !enabled);
+}
+
+// ─── Save: Web Request (no reboot) ───
+function saveWebRequest() {
+  const cfg = {
+    web_request: {
+      enabled: document.getElementById('cfg-wr-enable').checked,
+      timeout_ms: parseInt(document.getElementById('cfg-wr-timeout').value) || 5000,
+      relay1_on: document.getElementById('cfg-wr-relay1-on').value,
+      relay1_off: document.getElementById('cfg-wr-relay1-off').value,
+      relay2_on: document.getElementById('cfg-wr-relay2-on').value,
+      relay2_off: document.getElementById('cfg-wr-relay2-off').value,
+      pcled_on: document.getElementById('cfg-wr-pcled-on').value,
+      pcled_off: document.getElementById('cfg-wr-pcled-off').value,
+      gpio1_high: document.getElementById('cfg-wr-gpio1-high').value,
+      gpio1_low: document.getElementById('cfg-wr-gpio1-low').value,
+      gpio2_high: document.getElementById('cfg-wr-gpio2-high').value,
+      gpio2_low: document.getElementById('cfg-wr-gpio2-low').value,
+      gpio3_high: document.getElementById('cfg-wr-gpio3-high').value,
+      gpio3_low: document.getElementById('cfg-wr-gpio3-low').value
+    }
+  };
+  fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(cfg)
+  }).then(r => r.json()).then(d => {
+    if (d.ok) alert('Web Request 설정이 저장되었습니다.');
     else alert('저장 실패');
   });
 }

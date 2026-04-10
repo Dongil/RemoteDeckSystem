@@ -42,7 +42,7 @@ void WebServer::setupAPI() {
         else req->send(500);
     });
 
-    // POST /api/relay
+    // POST /api/relay — supports both legacy (action) and v2.2 (state/cmd) formats
     _server->on("/api/relay", HTTP_POST, [](AsyncWebServerRequest* req) {},
         NULL,
         [this](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
@@ -51,7 +51,15 @@ void WebServer::setupAPI() {
             StaticJsonDocument<256> doc;
             if (deserializeJson(doc, data, len)) { req->send(400); return; }
             uint8_t relay = doc["relay"] | 1;
-            String action = doc["action"] | "toggle";
+            // v2.2: "state" field or "cmd" field
+            String action;
+            if (doc.containsKey("state")) {
+                action = doc["state"].as<String>();
+            } else if (doc.containsKey("cmd") && String(doc["cmd"].as<const char*>()) == "pulse") {
+                action = "pulse";
+            } else {
+                action = doc["action"] | "toggle";
+            }
             uint16_t duration = doc["duration"] | 500;
             _handleRelay(relay, action, duration);
             req->send(200, "application/json", "{\"ok\":true}");

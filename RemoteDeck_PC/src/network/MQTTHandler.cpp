@@ -78,14 +78,7 @@ void MQTTHandler::publish(const char* payload) {
     if (!_client.connected()) return;
     std::string topic = resolveTopic(_config.topicPub);
     _client.publish(topic.c_str(), payload);
-}
-
-void MQTTHandler::publishStatus(const StatusConfig& status) {
-    String json;
-    if (JsonUtils::serializeStatusConfig(status, json)) {
-        publish(json.c_str());
-        Serial.printf("MQTT pub: %s\n", json.c_str());
-    }
+    Serial.printf("MQTT pub: %s\n", payload);
 }
 
 void MQTTHandler::disconnect() {
