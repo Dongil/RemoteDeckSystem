@@ -42,7 +42,7 @@ void UDPDiscovery::handlePacket(int len, IPAddress remoteIP, uint16_t remotePort
     Serial.printf("UDPDiscovery: Packet from %s:%d (%d bytes)\n",
                   remoteIP.toString().c_str(), remotePort, len);
 
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(4096);
     if (deserializeJson(doc, _buffer)) {
         Serial.printf("UDPDiscovery: Invalid JSON (%d bytes)\n", len);
         return;
@@ -95,15 +95,24 @@ void UDPDiscovery::handlePacket(int len, IPAddress remoteIP, uint16_t remotePort
                          std::string(targetId) == "unknown")) {
             String configJson;
             serializeJson(doc["config"], configJson);
-            bool ok = _onConfig ? _onConfig(configJson.c_str()) : false;
 
+            // Send ACK first (before save, to avoid timeout if save is slow)
             StaticJsonDocument<256> resp;
             resp["cmd"] = "SET_CONFIG_ACK";
             resp["device_id"] = _config->deviceId;
-            resp["result"] = ok ? "ok" : "error";
+            resp["result"] = "ok";
             char respBuf[256];
             serializeJson(resp, respBuf);
             sendResponse(respBuf, remoteIP, remotePort);
+
+            // Save config after ACK
+            bool ok = _onConfig ? _onConfig(configJson.c_str()) : false;
+            Serial.printf("UDPDiscovery: SET_CONFIG %s (%d bytes)\n", ok ? "saved" : "FAILED", configJson.length());
+            if (!ok) {
+                resp["result"] = "error";
+                serializeJson(resp, respBuf);
+                sendResponse(respBuf, remoteIP, remotePort);
+            }
         }
 
     } else if (strcmp(cmd, "REBOOT") == 0) {

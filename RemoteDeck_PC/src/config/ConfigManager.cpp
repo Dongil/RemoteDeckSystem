@@ -29,8 +29,7 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.network.ethIp = net["ethernet"]["ip"] | "192.168.1.200";
     config.network.ethGateway = net["ethernet"]["gateway"] | "192.168.1.1";
     config.network.ethSubnet = net["ethernet"]["subnet"] | "255.255.255.0";
-    config.network.ethDns1 = net["ethernet"]["dns1"] | "8.8.8.8";
-    config.network.ethDns2 = net["ethernet"]["dns2"] | "8.8.4.4";
+    config.network.ethDns1 = net["ethernet"]["dns1"] | "";
     config.network.ethMac = net["ethernet"]["mac"] | "";
     config.network.wifiSsid = net["wifi"]["ssid"] | "";
     config.network.wifiPassword = net["wifi"]["password"] | "";
@@ -38,7 +37,7 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.network.wifiIp = net["wifi"]["ip"] | "";
     config.network.wifiGateway = net["wifi"]["gateway"] | "";
     config.network.wifiSubnet = net["wifi"]["subnet"] | "255.255.255.0";
-    config.network.wifiDns1 = net["wifi"]["dns1"] | "8.8.8.8";
+    config.network.wifiDns1 = net["wifi"]["dns1"] | "";
     config.network.wifiMac = net["wifi"]["mac"] | "";
 
     // MQTT
@@ -112,7 +111,6 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     eth["gateway"] = config.network.ethGateway;
     eth["subnet"] = config.network.ethSubnet;
     eth["dns1"] = config.network.ethDns1;
-    eth["dns2"] = config.network.ethDns2;
     eth["mac"] = config.network.ethMac;
     JsonObject wifi = net.createNestedObject("wifi");
     wifi["ssid"] = config.network.wifiSsid;
@@ -203,8 +201,7 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.network.ethIp = "192.168.1.200";
     config.network.ethGateway = "192.168.1.1";
     config.network.ethSubnet = "255.255.255.0";
-    config.network.ethDns1 = "8.8.8.8";
-    config.network.ethDns2 = "8.8.4.4";
+    config.network.ethDns1 = "";
     config.network.ethMac = "";
     config.network.wifiSsid = "";
     config.network.wifiPassword = "";
@@ -212,7 +209,7 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.network.wifiIp = "";
     config.network.wifiGateway = "";
     config.network.wifiSubnet = "255.255.255.0";
-    config.network.wifiDns1 = "8.8.8.8";
+    config.network.wifiDns1 = "";
     config.network.wifiMac = "";
     config.mqtt.broker = "";
     config.mqtt.port = 1883;

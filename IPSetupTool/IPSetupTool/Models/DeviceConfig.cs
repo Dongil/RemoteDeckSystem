@@ -62,10 +62,7 @@ public class EthernetConfig
     public string Subnet { get; set; } = "255.255.255.0";
 
     [JsonPropertyName("dns1")]
-    public string Dns1 { get; set; } = "8.8.8.8";
-
-    [JsonPropertyName("dns2")]
-    public string Dns2 { get; set; } = "8.8.4.4";
+    public string Dns1 { get; set; } = "";
 
     [JsonPropertyName("mac")]
     public string MAC { get; set; } = "";
@@ -92,7 +89,7 @@ public class WifiConfig
     public string Subnet { get; set; } = "255.255.255.0";
 
     [JsonPropertyName("dns1")]
-    public string Dns1 { get; set; } = "8.8.8.8";
+    public string Dns1 { get; set; } = "";
 
     [JsonPropertyName("mac")]
     public string MAC { get; set; } = "";

@@ -205,14 +205,14 @@ public class UDPDiscoveryService
 
         using var udp = new UdpClient(0);
         udp.EnableBroadcast = true;
-        udp.Client.ReceiveTimeout = 5000;
+        udp.Client.ReceiveTimeout = 10000;
 
         var ep = new IPEndPoint(IPAddress.Parse(device.IP), DiscoveryPort);
         await udp.SendAsync(bytes, bytes.Length, ep);
 
         try
         {
-            var result = await udp.ReceiveAsync(new CancellationTokenSource(5000).Token);
+            var result = await udp.ReceiveAsync(new CancellationTokenSource(10000).Token);
             var response = Encoding.UTF8.GetString(result.Buffer);
             Log($"SendConfig ACK: {response}");
             using var doc = JsonDocument.Parse(response);

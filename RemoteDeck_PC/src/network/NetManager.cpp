@@ -158,8 +158,7 @@ void NetManager::onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
                 ETH.config(strToIP(_instance->_config->ethIp),
                            strToIP(_instance->_config->ethGateway),
                            strToIP(_instance->_config->ethSubnet),
-                           strToIP(_instance->_config->ethDns1),
-                           strToIP(_instance->_config->ethDns2));
+                           strToIP(_instance->_config->ethDns1));
             }
             break;
 

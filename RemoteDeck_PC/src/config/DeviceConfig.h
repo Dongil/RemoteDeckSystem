@@ -9,7 +9,6 @@ struct NetworkConfig {
     std::string ethGateway;
     std::string ethSubnet;
     std::string ethDns1;
-    std::string ethDns2;
     std::string ethMac;     // read-only, auto-detected
     // WiFi STA
     std::string wifiSsid;
