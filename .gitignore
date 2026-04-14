@@ -6,6 +6,9 @@ RemoteDeck_PC/.vscode/
 IPSetupTool/**/bin/
 IPSetupTool/**/obj/
 IPSetupTool/publish/
+APITestUtility_v2/**/bin/
+APITestUtility_v2/**/obj/
+APITestUtility_v2/**/publish/
 
 # Logs
 *.log
@@ -24,3 +27,6 @@ desktop.ini
 
 # bkit
 .bkit/
+
+# firmware build
+RemoteDeck_PC/firmware/
