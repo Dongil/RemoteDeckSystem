@@ -6,22 +6,31 @@ ESP32 기반 원격 PC 전원관리 시스템. 릴레이를 통한 PC 전원 제
 
 ```
 RemoteDeckSystem/
-├── RemoteDeck_PC/          ESP32 펌웨어 (PlatformIO)
-│   ├── src/                소스 코드
-│   ├── data/               SPIFFS (Web UI, 설정 파일)
-│   ├── firmware/           빌드된 펌웨어 (.bin)
-│   └── build_firmware.bat  펌웨어 빌드 스크립트
-├── IPSetupTool/            초기 네트워크 설정 도구 (Windows)
-├── APITestUtility_v2/      API 테스트 유틸리티 (Windows)
-├── asset/                  하드웨어 자료 (회로도, 패널)
-└── docs/                   문서
-    ├── RemoteDeck_PC_Manual.md   사용자 매뉴얼 + API 문서
-    ├── wiring-guide.md           배선 가이드
-    ├── 01-plan/                  PDCA Plan 문서
-    ├── 02-design/                PDCA Design 문서
-    ├── 03-analysis/              Gap Analysis 문서
-    ├── 04-report/                완료 보고서
-    └── archive/                  아카이브 (v2.0, v2.1)
+├── RemoteDeck_PC/              ESP32 펌웨어 (PlatformIO)
+│   ├── src/                    소스 코드
+│   │   ├── config/             설정 (DeviceConfig, ConfigManager)
+│   │   ├── control/            제어 (Relay, PCMonitor, Schedule, WOL)
+│   │   ├── network/            통신 (MQTT, NetManager, WebRequest, UDPDiscovery)
+│   │   ├── serial/             RS485
+│   │   ├── web/                WebServer, WebSocket, OTA
+│   │   ├── utils/              Logger
+│   │   └── main.cpp            메인 (명령 처리, 상태 발신)
+│   ├── data/                   SPIFFS (Web UI, deviceconfig.json)
+│   ├── firmware/               빌드된 배포용 펌웨어 (.bin)
+│   ├── build_firmware.bat      펌웨어 빌드 스크립트
+│   ├── platformio.ini          PlatformIO 설정
+│   └── partitions.csv          파티션 테이블
+├── IPSetupTool/                초기 네트워크 설정 도구 (.NET 8 WinForms)
+├── APITestUtility_v2/          API 테스트 유틸리티 (.NET 8 WinForms)
+├── asset/                      하드웨어 자료 (회로도, 릴레이, F_Panel)
+└── docs/                       문서
+    ├── RemoteDeck_PC_Manual.md 사용자 매뉴얼 + API 문서
+    ├── wiring-guide.md         배선 가이드
+    ├── 01-plan/                PDCA Plan
+    ├── 02-design/              PDCA Design
+    ├── 03-analysis/            Gap Analysis
+    ├── 04-report/              완료 보고서
+    └── archive/                아카이브 (v2.0, v2.1)
 ```
 
 ## 주요 기능
