@@ -64,7 +64,7 @@ RemoteDeckSystem/
 ### Status Event (장치에서 수신)
 
 ```json
-{"id":"node_1","event":"online","ip":"192.168.10.196","name":"새기기","fw":"2.2.0"}
+{"id":"node_1","event":"online","ip":"192.168.1.200","name":"새기기","fw":"2.2.0"}
 {"id":"node_1","event":"relay","relay1":1,"relay2":0}
 {"id":"node_1","event":"pcled","pc_on":true}
 {"id":"node_1","event":"full","relay1":1,"relay2":0,"pc_on":true,"gpio1":0,"gpio2":1,"gpio3":0,...}
@@ -74,15 +74,15 @@ RemoteDeckSystem/
 
 ```bash
 # 상태 조회
-curl -u admin:12345 http://192.168.10.196:5050/api/status
+curl -u admin:12345 http://192.168.1.200:5050/api/status
 
 # 릴레이1 ON
 curl -u admin:12345 -X POST -H "Content-Type: application/json" \
-  -d '{"relay":1,"state":"on"}' http://192.168.10.196:5050/api/relay
+  -d '{"relay":1,"state":"on"}' http://192.168.1.200:5050/api/relay
 
 # 릴레이1 펄스 (PC 전원 토글)
 curl -u admin:12345 -X POST -H "Content-Type: application/json" \
-  -d '{"cmd":"pulse","relay":1}' http://192.168.10.196:5050/api/relay
+  -d '{"cmd":"pulse","relay":1}' http://192.168.1.200:5050/api/relay
 ```
 
 > 전체 API 문서: [docs/RemoteDeck_PC_Manual.md](docs/RemoteDeck_PC_Manual.md)

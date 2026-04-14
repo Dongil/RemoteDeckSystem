@@ -203,7 +203,7 @@ GET /api/status
   "relay2": false,
   "gpio": [0, 0, 0],
   "uptime": 12345,
-  "ip": "192.168.10.196",
+  "ip": "192.168.1.200",
   "mac": "8E:4F:00:A1:E6:14",
   "fw_ver": "2.2.0",
   "device_name": "새기기",
@@ -273,19 +273,19 @@ GET  /api/log             이벤트 로그 조회
 
 ```bash
 # 상태 조회
-curl -u admin:12345 http://192.168.10.196:5050/api/status
+curl -u admin:12345 http://192.168.1.200:5050/api/status
 
 # 릴레이1 ON
 curl -u admin:12345 -X POST -H "Content-Type: application/json" \
-  -d '{"relay":1,"state":"on"}' http://192.168.10.196:5050/api/relay
+  -d '{"relay":1,"state":"on"}' http://192.168.1.200:5050/api/relay
 
 # 릴레이1 펄스 (PC 전원 토글)
 curl -u admin:12345 -X POST -H "Content-Type: application/json" \
-  -d '{"cmd":"pulse","relay":1}' http://192.168.10.196:5050/api/relay
+  -d '{"cmd":"pulse","relay":1}' http://192.168.1.200:5050/api/relay
 
 # PC 전원 강제 종료 (5초 길게)
 curl -u admin:12345 -X POST -H "Content-Type: application/json" \
-  -d '{"cmd":"pulse","relay":1,"duration":5000}' http://192.168.10.196:5050/api/relay
+  -d '{"cmd":"pulse","relay":1,"duration":5000}' http://192.168.1.200:5050/api/relay
 ```
 
 ---
@@ -323,7 +323,7 @@ curl -u admin:12345 -X POST -H "Content-Type: application/json" \
 
 **online** — 부팅/MQTT 연결 시
 ```json
-{"id":"node_1","event":"online","ip":"192.168.10.196","name":"새기기","fw":"2.2.0"}
+{"id":"node_1","event":"online","ip":"192.168.1.200","name":"새기기","fw":"2.2.0"}
 ```
 
 **relay** — 릴레이 상태 변경 시
@@ -340,7 +340,7 @@ curl -u admin:12345 -X POST -H "Content-Type: application/json" \
 ```json
 {
   "id":"node_1","event":"full",
-  "ip":"192.168.10.196","name":"새기기","fw":"2.2.0",
+  "ip":"192.168.1.200","name":"새기기","fw":"2.2.0",
   "relay1":1,"relay2":0,"pc_on":true,
   "gpio1":0,"gpio2":1,"gpio3":0,
   "uptime":12345,"mqtt":true
@@ -371,7 +371,7 @@ Authorization: Basic {base64(user:pass)}
     "relay2": false,
     "gpio": [0, 0, 0],
     "uptime": 12345,
-    "ip": "192.168.10.196",
+    "ip": "192.168.1.200",
     "fw_ver": "2.2.0",
     "mqtt_connected": true
   }
@@ -408,7 +408,7 @@ APITestUtility_v2는 RemoteDeck v2.2 API를 테스트하는 Windows 데스크톱
 
 | 필드 | 기본값 | 설명 |
 |------|--------|------|
-| IP | 192.168.10.196 | 장치 IP |
+| IP | 192.168.1.200 | 장치 IP |
 | Port | 5050 | 웹 포트 |
 | User | admin | 인증 ID |
 | Pass | 12345 | 인증 PW |
@@ -487,7 +487,7 @@ URL에 다음 플레이스홀더를 사용하면 실제 값으로 자동 치환�
 |-------------|--------|------|
 | `[device_id]` | 장치 ID | node_1 |
 | `[device_name]` | 장치 이름 | 새기기 |
-| `[ip]` | 장치 IP | 192.168.10.196 |
+| `[ip]` | 장치 IP | 192.168.1.200 |
 | `[mac]` | MAC 주소 | 8E:4F:00:A1:E6:14 |
 | `[event]` | 이벤트 이름 | relay1_on |
 | `[value]` | 상태 값 | 1 또는 0 |
@@ -500,7 +500,7 @@ http://내부서버.com/api/notify?device=[device_id]&event=[event]&value=[value
 
 → 릴레이1 ON 시 실제 호출:
 ```
-http://내부서버.com/api/notify?device=node_1&event=relay1_on&value=1&ip=192.168.10.196
+http://내부서버.com/api/notify?device=node_1&event=relay1_on&value=1&ip=192.168.1.200
 ```
 
 ---
