@@ -9,6 +9,10 @@ IPSetupTool/publish/
 APITestUtility_v2/**/bin/
 APITestUtility_v2/**/obj/
 APITestUtility_v2/**/publish/
+REST-api/bin/
+REST-api/obj/
+REST-api/.vs/
+**/.vs/
 
 # Logs
 *.log
