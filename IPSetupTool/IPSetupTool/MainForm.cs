@@ -43,6 +43,36 @@ public class MainForm : Form
 
         BuildUI();
         FormClosing += (_, _) => CleanupTempIP();
+        Shown += (_, _) => RecoverStaleNicState();
+    }
+
+    private void RecoverStaleNicState()
+    {
+        var stale = NetworkHelper.LoadNicState();
+        if (stale == null) return;
+        if (!stale.WasDhcp && !stale.WasDnsAuto)
+        {
+            // Nothing to restore (was static originally) — just clean up state file
+            NetworkHelper.ClearNicState();
+            return;
+        }
+        var ageMin = (DateTime.Now - stale.SavedAt).TotalMinutes;
+        var msg = $"이전 실행에서 네트워크 설정이 변경된 후 정상 종료되지 않은 것 같습니다.\n\n" +
+                  $"NIC: {stale.NicName}\n" +
+                  $"원래 DHCP: {(stale.WasDhcp ? "예" : "아니오")}\n" +
+                  $"원래 DNS 자동: {(stale.WasDnsAuto ? "예" : "아니오")}\n" +
+                  $"기록 시각: {stale.SavedAt:yyyy-MM-dd HH:mm:ss} ({ageMin:F0}분 전)\n\n" +
+                  $"DHCP 모드로 복원하시겠습니까?";
+        var result = MessageBox.Show(this, msg, "네트워크 상태 복원", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (result == DialogResult.Yes)
+        {
+            NetworkHelper.RemoveTempIP(stale.NicName); // also removes leftover *.100 + restores DHCP via internal restore call
+            SetStatus($"{stale.NicName}을(를) DHCP로 복원했습니다.", false);
+        }
+        else
+        {
+            NetworkHelper.ClearNicState();
+        }
     }
 
     private void BuildUI()

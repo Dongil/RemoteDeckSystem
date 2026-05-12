@@ -3,8 +3,17 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Security.Principal;
+using System.Text.Json;
 
 namespace IPSetupTool.Services;
+
+public class NicState
+{
+    public string NicName { get; set; } = "";
+    public bool WasDhcp { get; set; }
+    public bool WasDnsAuto { get; set; }
+    public DateTime SavedAt { get; set; }
+}
 
 public static class NetworkHelper
 {
@@ -13,6 +22,8 @@ public static class NetworkHelper
 
     private static readonly string LogPath = Path.Combine(
         AppDomain.CurrentDomain.BaseDirectory, "network_log.txt");
+    private static readonly string StatePath = Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory, "network_state.json");
 
     private static void Log(string msg)
     {
@@ -71,6 +82,9 @@ public static class NetworkHelper
     {
         Log($"AddTempIPCustom: NIC='{nicName}', IP={ip}, IsAdmin={IsRunningAsAdmin()}");
 
+        // Save original NIC state (DHCP/DNS) once per session for clean restore on exit
+        SaveStateIfFirstTime(nicName);
+
         // Check if this IP already exists
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
@@ -127,6 +141,9 @@ public static class NetworkHelper
             Log("AddTempIP: NOT running as admin!");
             return (false, "관리자 권한이 필요합니다.");
         }
+
+        // Save original NIC state (DHCP/DNS) once per session for clean restore on exit
+        SaveStateIfFirstTime(nicName);
 
         // Check if temp IP already exists (from previous run)
         if (IsTempIPExists())
@@ -198,7 +215,114 @@ public static class NetworkHelper
         // Also try removing the default temp IP directly
         RunNetshWithOutput($"interface ip delete address \"{nicName}\" {TempIP}");
 
+        // Restore original DHCP/DNS state (only if we recorded the NIC was DHCP before)
+        var state = LoadNicState();
+        if (state != null && state.NicName == nicName)
+        {
+            RestoreNicState(state);
+            ClearNicState();
+        }
+
         return true; // Best effort
+    }
+
+    // ─── NIC state save/restore (DHCP/DNS) ──────────────────────────────────
+
+    public static NicState CaptureNicState(string nicName)
+    {
+        // Get-NetIPInterface.Dhcp returns "Enabled" or "Disabled"
+        var (_, dhcpOut) = RunPowerShellWithOutput(
+            $"(Get-NetIPInterface -InterfaceAlias '{nicName}' -AddressFamily IPv4 -ErrorAction SilentlyContinue).Dhcp");
+        bool wasDhcp = dhcpOut.Trim().Equals("Enabled", StringComparison.OrdinalIgnoreCase);
+
+        // DNS auto-config: ServerAddresses array empty means DHCP-supplied DNS
+        var (_, dnsOut) = RunPowerShellWithOutput(
+            $"$s = (Get-DnsClientServerAddress -InterfaceAlias '{nicName}' -AddressFamily IPv4 -ErrorAction SilentlyContinue).ServerAddresses; " +
+            $"if ($s) {{ $s.Count }} else {{ 0 }}");
+        bool wasDnsAuto = dnsOut.Trim() == "0";
+
+        var state = new NicState
+        {
+            NicName = nicName,
+            WasDhcp = wasDhcp,
+            WasDnsAuto = wasDnsAuto,
+            SavedAt = DateTime.Now
+        };
+        Log($"CaptureNicState: NIC='{nicName}', WasDhcp={wasDhcp}, WasDnsAuto={wasDnsAuto}");
+        return state;
+    }
+
+    private static void SaveStateIfFirstTime(string nicName)
+    {
+        // Only capture state once per session — subsequent AddTempIP calls reuse it.
+        if (File.Exists(StatePath))
+        {
+            Log($"SaveStateIfFirstTime: state file exists, keeping original capture");
+            return;
+        }
+        try
+        {
+            var state = CaptureNicState(nicName);
+            File.WriteAllText(StatePath, JsonSerializer.Serialize(state));
+            Log($"SaveStateIfFirstTime: state saved to {StatePath}");
+        }
+        catch (Exception ex)
+        {
+            Log($"SaveStateIfFirstTime: error {ex.Message}");
+        }
+    }
+
+    public static NicState? LoadNicState()
+    {
+        try
+        {
+            if (!File.Exists(StatePath)) return null;
+            var json = File.ReadAllText(StatePath);
+            return JsonSerializer.Deserialize<NicState>(json);
+        }
+        catch (Exception ex)
+        {
+            Log($"LoadNicState: error {ex.Message}");
+            return null;
+        }
+    }
+
+    public static void ClearNicState()
+    {
+        try
+        {
+            if (File.Exists(StatePath)) File.Delete(StatePath);
+            Log("ClearNicState: state file deleted");
+        }
+        catch (Exception ex) { Log($"ClearNicState: error {ex.Message}"); }
+    }
+
+    public static void RestoreNicState(NicState state)
+    {
+        Log($"RestoreNicState: NIC='{state.NicName}', WasDhcp={state.WasDhcp}, WasDnsAuto={state.WasDnsAuto}");
+        if (state.WasDhcp)
+        {
+            var (ok, output) = RunNetshWithOutput(
+                $"interface ipv4 set address \"{state.NicName}\" source=dhcp");
+            Log($"  Restore DHCP: ok={ok}, output={output}");
+            if (!ok)
+            {
+                // Fallback: PowerShell
+                RunPowerShellWithOutput(
+                    $"Set-NetIPInterface -InterfaceAlias '{state.NicName}' -Dhcp Enabled -ErrorAction SilentlyContinue");
+            }
+        }
+        if (state.WasDnsAuto)
+        {
+            var (ok, output) = RunNetshWithOutput(
+                $"interface ipv4 set dnsservers \"{state.NicName}\" source=dhcp");
+            Log($"  Restore DNS auto: ok={ok}, output={output}");
+            if (!ok)
+            {
+                RunPowerShellWithOutput(
+                    $"Set-DnsClientServerAddress -InterfaceAlias '{state.NicName}' -ResetServerAddresses -ErrorAction SilentlyContinue");
+            }
+        }
     }
 
     private static (bool success, string output) RunNetshWithOutput(string args)
