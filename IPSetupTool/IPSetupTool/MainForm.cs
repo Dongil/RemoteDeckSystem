@@ -406,13 +406,20 @@ public class MainForm : Form
             _txtWifiSsid.Text, _txtWifiPassword.Text, _chkWifiDhcp.Checked,
             _txtWifiIp.Text, _txtWifiGateway.Text, _txtWifiSubnet.Text, _txtWifiDns.Text);
 
-        // ETH 관리 IP로 설정 전송
+        // ETH 관리 IP로 설정 전송 (HTTP 우선 — UDP SET_CONFIG가 W5500/ESP-IDF NULL netif 크래시 유발)
         var mgmtDevice = new DeviceInfo { DeviceId = _selectedDevice.DeviceId, IP = _selectedDevice.ManagementIP, WebPort = 5050 };
-        bool saved = await _discovery.SendConfigAsync(mgmtDevice, config);
+        bool saved = await _configService.SendConfigViaHttpAsync(mgmtDevice.IP, mgmtDevice.WebPort, config);
+        if (!saved)
+        {
+            // HTTP 실패 시 UDP 폴백 (장치 펌웨어가 구버전인 경우)
+            SetStatus("HTTP 설정 저장 실패 - UDP 재시도 중...", true);
+            saved = await _discovery.SendConfigAsync(mgmtDevice, config);
+        }
         if (!saved) { SetStatus("설정 저장 실패.", false); return; }
 
         SetStatus("재부팅 중...", true);
-        await _discovery.SendRebootAsync(mgmtDevice);
+        bool rebooted = await _configService.SendRebootViaHttpAsync(mgmtDevice.IP, mgmtDevice.WebPort);
+        if (!rebooted) await _discovery.SendRebootAsync(mgmtDevice);
 
         if (!string.IsNullOrEmpty(activeIp)) _discovery.AddUnicastTarget(activeIp);
         CleanupTempIP();
