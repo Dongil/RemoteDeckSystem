@@ -310,6 +310,8 @@ String buildStatusJson() {
     doc["ntp_synced"] = ntpSync.isSynced();
     doc["time"] = ntpSync.getTimeString();
     doc["mqtt_connected"] = mqttHandler.isConnected();
+    doc["heap_free"] = ESP.getFreeHeap();
+    doc["heap_min"] = ESP.getMinFreeHeap();
 
     String output;
     serializeJson(doc, output);
