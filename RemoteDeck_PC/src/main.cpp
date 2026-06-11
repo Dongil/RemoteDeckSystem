@@ -594,6 +594,30 @@ void setup() {
     webServer.ota().setOnProgress([](uint8_t pct) {
         webServer.ws().broadcastOTAProgress(pct);
     });
+    // Auto-detect firmware version/date from upload filename
+    // Pattern: RemoteDeck_PC_V{VERSION}_OTA_{YYYYMMDD}.bin
+    webServer.ota().setOnFilename([](const String& filename) {
+        int vIdx = filename.indexOf("_V");
+        int oIdx = filename.indexOf("_OTA_");
+        int dotIdx = filename.lastIndexOf(".bin");
+        if (vIdx < 0 || oIdx < 0 || dotIdx < 0 || vIdx >= oIdx || oIdx >= dotIdx) {
+            Serial.printf("OTA: Filename pattern not recognized, version not updated: %s\n", filename.c_str());
+            return;
+        }
+        String version = filename.substring(vIdx + 2, oIdx);
+        String dateRaw = filename.substring(oIdx + 5, dotIdx);
+        if (dateRaw.length() != 8) {
+            Serial.printf("OTA: Date format unexpected (expected YYYYMMDD): %s\n", dateRaw.c_str());
+            return;
+        }
+        String dateFormatted = dateRaw.substring(0, 4) + "-" + dateRaw.substring(4, 6) + "-" + dateRaw.substring(6, 8);
+        config.firmware.version = version.c_str();
+        config.firmware.date = dateFormatted.c_str();
+        ConfigManager::save(config);
+        Serial.printf("OTA: Detected version %s (%s) from filename, saved to config\n",
+                      version.c_str(), dateFormatted.c_str());
+        logger.log("OTA", (String("Version ") + version + " (" + dateFormatted + ")").c_str());
+    });
     webServer.begin(WEB_PORT, &config.auth);
 
     // Send ONLINE event via RS485

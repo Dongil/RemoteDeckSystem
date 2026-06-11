@@ -1,7 +1,8 @@
 # RemoteDeck PC v2.3.0 Release Notes
 
 > **버전**: v2.3.0
-> **릴리스 날짜**: 2026-06-10
+> **최초 릴리스**: 2026-06-10
+> **최종 개정**: 2026-06-11 (BUG-5, BUG-6 추가, OTA 자동 버전 파싱)
 > **유형**: 안정성 / 디버깅 핫픽스 릴리스
 > **대상**: v2.2.0 사용자 (in-place 펌웨어 업데이트 권장)
 
@@ -11,20 +12,20 @@
 
 | 항목 | 내용 |
 |------|------|
-| 종류 | 안정성 버그 수정 (Hotfix 누적 릴리스) |
-| 핵심 이슈 | IPSetupTool IP 변경 실패 / WebRequest 소켓 누수 / NTP 미동기화 |
-| 변경 파일 | 펌웨어 4개 + IPSetupTool 2개 (이전 릴리스 누적 포함) |
-| API 변경 | 없음 (v2.2 API 100% 호환) |
+| 종류 | 안정성 버그 수정 (Hotfix 누적 릴리스) + 운영 편의 기능 추가 |
+| 핵심 이슈 | IPSetupTool IP 변경 실패 / WebRequest 소켓 누수 / NTP 미동기화 / 웹 로그 표시 truncation |
+| 변경 파일 | 펌웨어 7개 + IPSetupTool 2개 (이전 릴리스 누적 포함) |
+| API 변경 | `/api/status`에 `heap_free`, `heap_min` 필드 추가 (하위 호환) |
 | 권장 업데이트 | **필수** — Ethernet 모드에서 v2.2 사용자는 모두 영향 받음 |
 
 ### Value Delivered
 
 | 관점 | 내용 |
 |------|------|
-| **Problem** | (1) IPSetupTool로 IP 변경 시 디바이스 Guru Meditation crash. (2) PCLED 토글 시 약 15회 후 WebRequest가 `socket: 105` 에러로 영구 실패. (3) 웹 UI 로그의 시간 필드가 `--:--:--`로 표시. (4) 웹 UI 로그에 WebRequest 호출 기록 누락. |
-| **Solution** | (1) IPSetupTool을 UDP `SET_CONFIG`/`REBOOT`에서 HTTP REST API로 전환. (2) `WebRequestHandler`를 task-per-request → 단일 worker task + FreeRTOS queue 구조로 재설계. (3) NTP 서버에 한국 IP fallback 2개 추가 (DNS 우회). (4) Logger에 thread-safe mutex 적용 + WebRequest 콜백 연결. |
-| **Function/UX Effect** | IP 변경 시 안정적인 재부팅, 외부 시스템 연동(WebRequest)이 무한정 동작, 로그에 정확한 시각과 모든 HTTP 호출 결과 표시. |
-| **Core Value** | 현장 배포 가능한 수준의 장기 운영 안정성 확보. PIR 등 빠른 토글이 발생하는 응용에서도 안심하고 사용 가능. |
+| **Problem** | (1) IPSetupTool IP 변경 시 디바이스 Guru Meditation crash. (2) PCLED 토글 약 15회 후 WebRequest `socket: 105` 영구 실패. (3) 웹 UI 로그 시간 `--:--:--` 표시. (4) 웹 UI 로그에 WebRequest 호출 누락. (5) 장기 운영 시 약 25~30개 이후 웹 로그가 `undefined`로 truncate. (6) OTA 후 `fw_ver` 표시값이 deviceconfig.json 그대로라 수동 업데이트 필요. |
+| **Solution** | (1) IPSetupTool HTTP REST API 전환. (2) WebRequestHandler를 단일 worker task + FreeRTOS queue로 재설계. (3) NTP 한국 IP fallback 2개 추가. (4) Logger thread-safe mutex + WebRequest 콜백 연결. (5) Logger JSON 직렬화 doc 크기를 entry 내용 기반 동적 사이징. (6) OTA 업로드 파일명(`RemoteDeck_PC_V{ver}_OTA_{date}.bin`)에서 버전/날짜 자동 파싱 + config 저장. |
+| **Function/UX Effect** | IP 변경 안정성, 외부 시스템 연동 무한정 동작, 로그 시각과 100개 모두 정상 표시, OTA 업로드 한 번으로 펌웨어 + 버전 표시까지 동시 갱신, heap 모니터링으로 장기 운영 검증 가능. |
+| **Core Value** | 현장 배포 가능한 수준의 장기 운영 안정성 확보 + 운영자 편의성. PIR 등 빠른 토글 응용에서도 검증 완료, OTA 운영 휴먼 에러 방지. |
 
 ---
 
@@ -164,6 +165,87 @@ configTzTime(timezone, server, NTP_FALLBACK_1, NTP_FALLBACK_2);
 
 ---
 
+### BUG-5: 웹 UI 로그 표시 truncation (`undefined` 표시)
+
+**증상**
+- PIR 장기 테스트 중 약 25~30개 항목 이후 웹 UI 로그가 잘리고
+- 마지막 줄에 `[timestamp] undefined` 표시
+- 시리얼은 정상 출력됨 (펌웨어 내부 `_entries` vector는 정상 누적)
+
+**원인**
+- `Logger::toJson()`이 `DynamicJsonDocument doc(4096)` 고정 4KB 버퍼 사용
+- WEBREQ 1개 항목 ≈ `timestamp(10)` + `time(8)` + `event(6)` + `detail(URL 약 80)` + JSON 구조 오버헤드 = **약 150~200 바이트**
+- 100개 항목 × 175 = **약 17.5KB 필요** → 4KB 초과 → `arr.createNestedObject()`가 invalid object 반환 → `obj["event"] = "WEBREQ"` no-op → JS 측 `undefined` 표시
+
+**수정**
+실제 entry 내용 합산 기반 동적 사이징:
+```cpp
+size_t capacity = JSON_OBJECT_SIZE(1) + JSON_ARRAY_SIZE(_entries.size())
+                + _entries.size() * JSON_OBJECT_SIZE(4);
+for (const auto& e : _entries) {
+    capacity += e.timeStr.length() + e.eventStr.length() + e.detailStr.length() + 16;
+}
+capacity += 512;  // safety margin
+DynamicJsonDocument doc(capacity);
+```
+
+**부수 영향 (긍정)**
+- `_entries` vector 자체는 정상 circular 동작이었으므로 **장기 운영 영향은 없었음** (표시만 잘림)
+- 수정 후 100개 모두 정상 직렬화
+
+**파일**: `RemoteDeck_PC/src/utils/Logger.cpp`
+
+---
+
+### BUG-6: OTA 후 `fw_ver` 자동 갱신 안 됨 + Heap 모니터링 부재
+
+**증상**
+- OTA로 펌웨어를 새 버전으로 교체해도 `/api/status`의 `fw_ver`는 SPIFFS의 `deviceconfig.json` 값을 그대로 표시 → 수동 설정 저장 필요
+- 장기 운영 시 heap 누수 모니터링 수단 없음 (외부 진단 도구 필요)
+
+**수정**
+
+**1) OTA 업로드 파일명 기반 버전 자동 파싱**
+- `OTAHandler`에 `setOnFilename(callback)` 추가
+- 업로드 시작(`index == 0`) 시점에 파일명 콜백 호출
+- main.cpp에서 파일명 패턴 `RemoteDeck_PC_V{VERSION}_OTA_{YYYYMMDD}.bin` 파싱
+  - 예: `RemoteDeck_PC_V2.3.0_OTA_20260611.bin` → version `2.3.0`, date `2026-06-11`
+- `Update.begin()` 직전에 `config.firmware.version/date` 갱신 + `ConfigManager::save(config)`
+- 재부팅 후 새 버전으로 자동 표시
+
+```cpp
+webServer.ota().setOnFilename([](const String& filename) {
+    int vIdx = filename.indexOf("_V");
+    int oIdx = filename.indexOf("_OTA_");
+    int dotIdx = filename.lastIndexOf(".bin");
+    // ... parse, update, save ...
+    config.firmware.version = version.c_str();
+    config.firmware.date = dateFormatted.c_str();
+    ConfigManager::save(config);
+    logger.log("OTA", (String("Version ") + version + " (" + dateFormatted + ")").c_str());
+});
+```
+
+**2) Heap 모니터링 필드 추가**
+`/api/status` 응답에 다음 필드 추가 (하위 호환):
+```json
+{
+  "heap_free": 202500,    // 현재 free heap (bytes)
+  "heap_min": 190312      // 부팅 후 최저점 (가장 위험했던 순간)
+}
+```
+
+활용:
+- 30분~1시간 간격으로 `/api/status` 호출
+- `heap_free` 변동 ±5KB 이내면 누수 없음
+- `heap_min` 150KB 이상 유지되면 안전 마진 충분
+
+**파일**:
+- `RemoteDeck_PC/src/web/OTAHandler.h` / `.cpp`
+- `RemoteDeck_PC/src/main.cpp`
+
+---
+
 ## 2. 하드웨어 응용 가이드 (참고)
 
 v2.3.0 디버깅 과정에서 검증된 응용 시나리오:
@@ -201,8 +283,17 @@ v2.3.0 이후 (worker + queue 구조):
 ### 3.1 OTA 업데이트 (권장)
 
 1. 웹 UI 접속 (`http://{장치IP}:5050`) → **펌웨어** 탭
-2. v2.3.0 펌웨어 binary 업로드
+2. 펌웨어 binary 업로드 — 파일명 규칙을 지키면 버전 자동 갱신
 3. 자동 재부팅 (설정 보존)
+
+**파일명 규칙** (BUG-6 자동 버전 파싱 활용):
+```
+RemoteDeck_PC_V{VERSION}_OTA_{YYYYMMDD}.bin
+```
+예시:
+- `RemoteDeck_PC_V2.3.0_OTA_20260611.bin` → 자동으로 fw_ver="2.3.0", date="2026-06-11" 저장
+- `RemoteDeck_PC_V2.4.0_OTA_20260801.bin` → 자동으로 fw_ver="2.4.0", date="2026-08-01" 저장
+- 규칙에 안 맞으면 펌웨어는 정상 업데이트되지만 `fw_ver`는 변경되지 않음 (시리얼에 `Filename pattern not recognized` 출력)
 
 ### 3.2 시리얼 업로드 (개발자)
 
@@ -227,6 +318,9 @@ pio run -e esp32dev -t upload --upload-port COM3
 - [ ] IPSetupTool로 IP 변경 시 crash 없이 정상 재부팅
 - [ ] WebRequest 활성화 후 PCLED 토글 30회 이상 연속 성공 (`socket: 105` 미발생)
 - [ ] 웹 UI 로그에 `WEBREQ [200] http://...` 항목 표시
+- [ ] 웹 UI 로그가 100개 항목까지 모두 정상 표시 (`undefined` 미발생)
+- [ ] OTA 후 `/api/status`의 `fw_ver` 값이 업로드한 파일명의 버전과 일치
+- [ ] `/api/status`에 `heap_free`, `heap_min` 필드 존재 (장기 운영 모니터링용)
 
 ---
 
@@ -236,11 +330,12 @@ pio run -e esp32dev -t upload --upload-port COM3
 
 | 파일 | 변경 내용 |
 |------|-----------|
-| `src/main.cpp` | 부팅 메시지 v2.2 → v2.3, WebRequest setLogger 연결 |
+| `src/main.cpp` | 부팅 메시지 v2.2 → v2.3, WebRequest setLogger 연결, OTA 파일명 버전 파서 콜백 등록, `/api/status`에 heap_free/heap_min 필드 추가 |
 | `src/config/ConfigManager.cpp` | 기본 firmware.version "2.3.0", date "2026-06-10" |
 | `src/network/WebRequestHandler.h` / `.cpp` | worker task + queue 구조 재설계, LogCallback 추가 |
 | `src/network/NTPSync.cpp` | 한국 NTP IP 2개 fallback, 초기 동기화 시간 10초 확장 |
-| `src/utils/Logger.h` / `.cpp` | SemaphoreHandle_t mutex 적용 (thread-safe) |
+| `src/utils/Logger.h` / `.cpp` | SemaphoreHandle_t mutex, `toJson()` 동적 사이징 (4KB 고정 → entry 내용 기반) |
+| `src/web/OTAHandler.h` / `.cpp` | `setOnFilename(cb)` 인터페이스 추가, 업로드 시작 시점에 파일명 콜백 호출 |
 | `data/deviceconfig.json` | version "2.3.0", date "2026-06-10" |
 
 ### IPSetupTool
@@ -267,8 +362,9 @@ pio run -e esp32dev -t upload --upload-port COM3
 - 펌웨어: UDP `SET_CONFIG` handler deprecation (HTTP-only로 단순화)
 - 펌웨어: `/api/reboot` 응답 완료 후 restart (TaskCanceledException 제거)
 - 펌웨어: SPIFFS OTA 지원 (`Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)`)
+- 펌웨어: GPIO1~3 입력에 `INPUT_PULLUP` + 폴링 간격 옵션 노출 (PIR 천정 릴레이 직결 시 응답 시간 단축)
 - 플랫폼: pioarduino platform-espressif32 최신 버전 (W5500 NULL netif 패치 적용 가능성)
-- 응용: PIR 인체감지 통합 정식 기능화 (PCLED 재사용 → 전용 GPIO 분리)
+- 응용: PIR 인체감지 통합 정식 기능화 (PCLED 재사용 → 전용 GPIO 분리, AC 220V 트리거 릴레이 모듈 표준 연결)
 
 ---
 
@@ -279,7 +375,11 @@ pio run -e esp32dev -t upload --upload-port COM3
 - 이전 핫픽스 커밋:
   - `b6d4371` fix(IPSetupTool): DHCP 상태 저장/복원으로 인터넷 단절 방지
   - `3e1338f` fix(IPSetupTool): SET_CONFIG/REBOOT을 HTTP 경로로 전환
+- v2.3.0 릴리스 커밋:
+  - `cab6764` feat(RemoteDeck_PC): v2.3.0 안정성 핫픽스 릴리스 (BUG-1 ~ BUG-4)
+  - `43547a8` fix(RemoteDeck_PC): 웹 로그 표시 truncation + heap 모니터링 추가 (BUG-5)
+  - (이번 커밋) fix(RemoteDeck_PC): OTA 파일명에서 버전/날짜 자동 파싱 (BUG-6)
 
 ---
 
-*Generated: 2026-06-10 by RemoteDeck PC dev team*
+*Generated: 2026-06-10, Revised: 2026-06-11 by RemoteDeck PC dev team*

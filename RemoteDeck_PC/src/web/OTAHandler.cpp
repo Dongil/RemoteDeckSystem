@@ -24,6 +24,8 @@ void OTAHandler::setup(AsyncWebServer* server, const char* path) {
                 Serial.printf("OTA: Starting update with %s\n", filename.c_str());
                 _totalSize = request->contentLength();
 
+                if (_onFilename) _onFilename(filename);
+
                 if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
                     Update.printError(Serial);
                     return;
