@@ -4,6 +4,11 @@
 #include <functional>
 #include <string>
 
+extern "C" {
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+}
+
 struct LogEntry {
     unsigned long ts;
     String timeStr;
@@ -13,10 +18,10 @@ struct LogEntry {
 
 class Logger {
 public:
+    Logger();
     void log(const char* evt, const char* det = "");
-    const std::vector<LogEntry>& getAll() const { return _entries; }
     String toJson() const;
-    void clear() { _entries.clear(); }
+    void clear();
 
     using TimeGetter = String(*)();
     void setNTPTimeGetter(TimeGetter getter) { _getTime = getter; }
@@ -26,4 +31,5 @@ public:
 private:
     std::vector<LogEntry> _entries;
     TimeGetter _getTime = nullptr;
+    mutable SemaphoreHandle_t _mutex = nullptr;
 };

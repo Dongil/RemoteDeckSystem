@@ -515,6 +515,9 @@ void setup() {
     webRequestHandler.setMACGetter([]() -> String {
         return String(networkManager.macAddress().c_str());
     });
+    webRequestHandler.setLogger([](const char* evt, const char* det) {
+        logger.log(evt, det);
+    });
 
     // Web Server
     webServer.setStatusGetter(buildStatusJson);
@@ -599,7 +602,7 @@ void setup() {
     }
 
     logger.log("SYSTEM", "Boot complete");
-    Serial.println("=== RemoteDeck PC Power Manager v2.2 ===");
+    Serial.println("=== RemoteDeck PC Power Manager v2.3 ===");
     Serial.printf("    Mode: %s\n", config.network.mode.c_str());
     if (networkManager.isConnected()) {
         Serial.printf("    Primary IP: %s\n", networkManager.localIP().toString().c_str());

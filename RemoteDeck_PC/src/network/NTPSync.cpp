@@ -1,12 +1,18 @@
 #include "NTPSync.h"
 
-void NTPSync::begin(const char* server, const char* timezone) {
-    configTzTime(timezone, server);
-    Serial.printf("NTP: Configured with server=%s, tz=%s\n", server, timezone);
+// Korean public NTP fallback IPs — used when DNS is unavailable (e.g. W5500 Ethernet)
+static const char* NTP_FALLBACK_1 = "168.126.63.1";    // kns.kornet.net (KT)
+static const char* NTP_FALLBACK_2 = "203.248.240.140"; // time.bora.net (LG U+)
 
-    // Wait briefly for initial sync
+void NTPSync::begin(const char* server, const char* timezone) {
+    // ESP-IDF SNTP accepts up to 3 servers; configure user server + 2 IP fallbacks
+    configTzTime(timezone, server, NTP_FALLBACK_1, NTP_FALLBACK_2);
+    Serial.printf("NTP: Configured with server=%s (fallback: %s, %s), tz=%s\n",
+                  server, NTP_FALLBACK_1, NTP_FALLBACK_2, timezone);
+
+    // Wait up to 10 seconds for initial sync
     struct tm t;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 20; i++) {
         if (getLocalTime(&t, 500)) {
             _synced = true;
             Serial.printf("NTP: Synced - %04d-%02d-%02d %02d:%02d:%02d\n",

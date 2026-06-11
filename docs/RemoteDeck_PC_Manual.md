@@ -1,8 +1,9 @@
 # RemoteDeck PC 원격 전원관리 시스템
 
-> **버전**: v2.2.0
-> **최종 수정**: 2026-04-10
+> **버전**: v2.3.0
+> **최종 수정**: 2026-06-10
 > **대상**: 사내 타부서, 개발수행 클라이언트
+> **v2.3.0 변경점**: [Release Notes](RemoteDeck_PC_v2.3.0_ReleaseNotes.md) 참조 (IP 변경 안정성, WebRequest 무한 동작, NTP 동기화, WebRequest 로그 추가)
 
 ---
 

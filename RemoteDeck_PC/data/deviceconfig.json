@@ -53,8 +53,8 @@
     "timezone": "KST-9"
   },
   "firmware": {
-    "version": "2.2.0",
-    "date": "2026-04-10"
+    "version": "2.3.0",
+    "date": "2026-06-10"
   },
   "web_request": {
     "enabled": false,
