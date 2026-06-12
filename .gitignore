@@ -32,5 +32,5 @@ desktop.ini
 # bkit
 .bkit/
 
-# firmware build
-RemoteDeck_PC/firmware/
+# firmware build: distribute binaries via repo, ignore intermediates
+# RemoteDeck_PC/firmware/  ← 배포 binary는 추적 (전체 펌웨어 + OTA)
