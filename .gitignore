@@ -1,6 +1,8 @@
 # PlatformIO
 RemoteDeck_PC/.pio/
 RemoteDeck_PC/.vscode/
+RemoteDeck_Touch/.pio/
+RemoteDeck_Touch/.vscode/
 
 # .NET
 IPSetupTool/**/bin/

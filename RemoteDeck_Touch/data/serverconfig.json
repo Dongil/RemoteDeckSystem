@@ -1,0 +1,16 @@
+{
+    "version": "0.0",
+    "config_url": "/iot_device/[device_id]/",
+    "image_url": "/iot_device/[device_id]/",
+    "status_url": "/attend_status.php?node_id=[device_id]&status=[status]",
+    "mqtt_url": "192.168.10.230",
+    "mqtt_user": "user",
+    "mqtt_passwd": "passwd",
+    "mqtt_port": 1883,
+    "mqtt_keepalive": 120,
+    "mqtt_pub": "room/client",
+    "mqtt_sub": "room/[device_id]",
+    "mqtt_ping": "room/ping",
+    "using_httprequest": false,
+    "sleep_time": 5
+}

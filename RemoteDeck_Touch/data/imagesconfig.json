@@ -1,0 +1,61 @@
+{
+    "version": "1.9",
+    "buzzer": {
+        "on": [
+            {
+                "freq": 4000,
+                "duration": 80,
+                "duty": 512
+            }
+        ],
+        "off": [
+            {
+                "freq": 4000,
+                "duration": 30,
+                "duty": 512
+            },
+            {
+                "freq": 3200,
+                "duration": 70,
+                "duty": 512
+            }
+        ]
+    },
+    "images": [
+        {
+            "url": "title.bmp",
+            "x": 0,
+            "y": 0,
+            "z": 0,
+            "state": "title"
+        },
+        {
+            "url": "photo.bmp",
+            "x": 0,
+            "y": 86,
+            "z": 0,
+            "state": "photo"
+        },
+        {
+            "url": "in.bmp",
+            "x": 100,
+            "y": 86,
+            "z": 0,
+            "state": "in"
+        },
+        {
+            "url": "out.bmp",
+            "x": 100,
+            "y": 86,
+            "z": 0,
+            "state": "out"
+        },
+        {
+            "url": "name.bmp",
+            "x": 0,
+            "y": 236,
+            "z": 0,
+            "state": "name"
+        }
+    ]
+}

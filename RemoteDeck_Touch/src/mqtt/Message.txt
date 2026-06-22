@@ -1,0 +1,53 @@
+{
+    "device_id": "node_2",
+    "status": "ONLINE",
+    "ip": "192.168.0.1",
+    "mac": "08b61f3a1e84"
+}
+
+
+//단말기(node_2) => 서버
+1) 기기 켜져서 mqtt 서버에 연결 될때
+{
+    "device_id": "node_2",
+    "status": "ONLINE",
+    "ip": "192.168.0.1",
+    "mac": "08b61f3a1e84"
+}
+2) 기기에서 부재에서 재실 누를때
+{
+    "device_id": "node_2",
+    "status": "IN",
+    "ip": "192.168.0.1",
+    "mac": "08b61f3a1e84"
+}
+3) 기기에서 재실에서 부재 누를때
+{
+    "device_id": "node_2",
+    "status": "OUT",
+    "ip": "192.168.0.1",
+    "mac": "08b61f3a1e84"
+}
+
+//서버 => 단말기(node_2)
+1) 서버 상태 재실일 경우 재실 전송
+{
+    "device_id": "node_2",
+    "status": "IN",
+    "ip": "server",
+    "mac": "server"
+}
+2) 서버 상태 부재일 경우 부재 전송
+{
+    "device_id": "node_2",
+    "status": "OUT",
+    "ip": "server",
+    "mac": "server"
+}
+3) 서버에서 접속된 모든 기기로 타임 스템프 보낼때
+{
+    "device_id": "TIME",
+    "status": "123456789",
+    "ip": "server",
+    "mac": "server"
+}
