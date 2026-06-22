@@ -152,6 +152,7 @@ RemoteDeck_Touch는 사무실/출입공간에 설치된 ESP32 기반 출퇴근(I
 |------|--------|------------|------------|
 | PNG 디코딩이 heap 부족으로 실패 | High | Medium | PSRAM 확인 후 사용, 디코드 결과를 LVGL `lv_img_dsc_t`로 캐싱 + 사용 후 free, 최대 이미지 크기 제한(예: 320×240 이하) |
 | AsyncWebServer 추가로 RAM 압박 | High | Medium | 라이브러리는 ESPAsyncWebServer (PC에서 검증됨) 재사용, 업로드 버퍼는 청크 단위 (≤ 1024 bytes), 동시 연결 제한 |
+| **AsyncTCP ↔ W5500 비호환 (2026-06-22 발견)** | **High** | **확정** | **arduino-libraries/Ethernet 은 lwIP 미경유 → AsyncTCP가 W5500 IP에서 listen 불가 (`tcpip_api_call: Invalid mbox` 크래시). v1 에서는 WiFi-only 가드로 우회, v2.1 에서 ETH.h + ETH_PHY_W5500 으로 LAN 스택 통일 예정 (PC v2.3.0 패턴)** |
 | 듀얼 네트워크(W5500+WiFi)에서 웹 서버 바인딩 충돌 | Medium | Medium | RemoteDeck_PC v2.3 코드 참조 — 활성 인터페이스의 `IPAddress`로만 listen, 둘 다 활성 시 Ethernet 우선 |
 | SPIFFS 용량 부족 (partitions.csv에서 spiffs 영역) | Medium | Low | 현재 huge_app 사용 중 → spiffs 별도 파티션 확보 필요, 1MB 이상 권장. Plan/Design 단계에서 partition 변경 결정 |
 | LVGL 핫리로드 시 이전 `lv_img_dsc_t` 데이터 해제 누락 → 메모리 누수 | High | High | `images_update()` 재호출 전에 기존 `img_photo.data` 등 free, malloc 이력 추적 헬퍼 도입 |
@@ -283,12 +284,24 @@ RemoteDeck_Touch/
 
 ## 9. Next Steps
 
-1. [ ] `/pdca design RemoteDeck_Touch` 로 Design 문서 작성 — 3가지 아키텍처 옵션 비교 후 선택
-2. [ ] partition layout 검증 (`huge_app.csv` 유지 가능 여부 vs custom partition)
-3. [ ] lv_png 빌드 가능성 검증 (lv_conf.h 설정)
-4. [ ] RemoteDeck_PC `src/web/` 와 `data/www/` 파일 목록 추출 → 재사용 범위 확정
-5. [ ] 구현은 모듈 단위 세션 분할 (Image pipeline → Web server → Hot reload → 검증)
-6. [ ] 펌웨어 1차 빌드 후 단말 1대 시범 배포 → 100회 교체 회귀 테스트
+### v1 (현재 사이클) — 진행 상황
+1. [x] Design 문서 작성 — Option C (Pragmatic) 선택
+2. [x] 빌드 환경 복구 (Ethernet 추상 클래스, esp_mac.h, ui_events.c)
+3. [x] M2: images.cpp BMP 24/32bit + free_img_dsc — 보드에서 실측 검증 완료
+4. [x] M3: downloadFile() 재작성 (close/reopen 제거)
+5. [x] M4~M7: WebServer + ImageApi + data/www — 빌드 통과
+6. [ ] WiFi 환경에서 웹 UI 실측 검증
+7. [ ] 단말 시범 배포 + 100회 교체 회귀 테스트
+
+### v2.1 백로그 (별도 PDCA 사이클)
+1. **LAN 스택 통일**: arduino-libraries/Ethernet → `<ETH.h>` + `ETH_PHY_W5500` (PC v2.3.0 NetManager 패턴)
+   - platform 변경: pioarduino 53.x (Arduino-ESP32 3.x)
+   - 의존: ArduinoHttpClient → HTTPClient(ESP32 내장), TFT_eSPI 라이브러리 업데이트, LCD/터치 회귀 검증
+   - 효과: AsyncWebServer 가 Ethernet 환경에서 동작 → WiFi-only 가드 제거
+2. **PNG 디코더 활성화**: `lv_png_init()` + LVGL FS driver 등록 방식 (LVGL 표준)
+3. **OTA**: PC v2.3.0 OTAHandler 이식
+4. **로그 뷰어**: PC v2.3.0 Logger + WebSocket 패턴 이식
+5. **deviceconfig/serverconfig 웹 편집** UI 추가
 
 ---
 

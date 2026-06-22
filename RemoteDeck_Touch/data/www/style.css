@@ -1,0 +1,40 @@
+/* RemoteDeck_Touch web UI - PC 디자인 토큰 재사용 */
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;font-size:14px;min-height:100vh}
+header{background:#16213e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+header h1{font-size:18px;color:#0ff;font-weight:bold}
+header span{font-size:12px;color:#888;font-family:monospace}
+main{padding:12px;max-width:900px;margin:0 auto}
+
+.card{background:#16213e;border-radius:8px;padding:16px;margin-bottom:12px}
+.card h2{font-size:14px;color:#0ff;margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:6px}
+
+.card-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.img-card{background:#0a0e27;border-radius:6px;padding:12px;border:1px solid #2a3050}
+.img-card .role{font-size:12px;color:#0ff;font-weight:bold;text-transform:uppercase;margin-bottom:6px}
+.img-card .thumb{background:#000;border-radius:4px;height:80px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px}
+.img-card .thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.img-card .thumb .placeholder{color:#444;font-size:11px}
+.img-card .meta{font-size:11px;color:#888;margin-bottom:8px;font-family:monospace}
+.img-card button{width:100%;padding:6px 12px;background:#0f3460;border:1px solid #0ff;color:#0ff;border-radius:4px;cursor:pointer;font-size:12px}
+.img-card button:hover{background:#1a5276}
+.img-card button.danger{border-color:#f44;color:#f44;margin-top:4px}
+.img-card button.danger:hover{background:#3a1a1a}
+
+.drop-zone{border:2px dashed #2a3050;border-radius:8px;padding:24px;text-align:center;color:#aaa;transition:all .2s}
+.drop-zone.dragover{border-color:#0ff;background:#0f3460;color:#0ff}
+.drop-zone p{margin-bottom:8px;line-height:1.5}
+.drop-zone input[type="file"]{margin:8px auto;color:#aaa}
+
+.progress-bar{background:#0a0e27;border-radius:4px;height:20px;margin:10px 0;overflow:hidden;border:1px solid #2a3050}
+.progress-fill{background:linear-gradient(90deg,#0ff,#0a8);height:100%;width:0%;transition:width .3s;color:#000;text-align:center;font-size:12px;font-weight:bold;line-height:20px}
+
+.log-container{max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px}
+.log-entry{padding:4px 0;border-bottom:1px solid #222}
+.log-entry .time{color:#888;margin-right:8px}
+.log-entry .event{color:#0ff;margin-right:8px}
+.log-entry.ok .event{color:#0f0}
+.log-entry.fail .event{color:#f44}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#16213e;border:1px solid #0ff;color:#0ff;padding:12px 20px;border-radius:6px;font-size:13px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.4);max-width:90%}
+.toast.fail{border-color:#f44;color:#f44}

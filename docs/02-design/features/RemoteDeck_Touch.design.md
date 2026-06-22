@@ -564,9 +564,26 @@ RemoteDeck_Touch/
 
 ### 12.3 듀얼 네트워크 바인딩
 
-- `WebServer.begin()` 직전, 활성 인터페이스 우선순위 결정 (Ethernet 우선)
-- 두 인터페이스 모두 활성화면 `AsyncWebServer`는 모든 인터페이스에서 listen (ESP32 lwIP 기본 동작)
-- 충돌 가능성 낮음, 단 mDNS는 단일 인터페이스로 제한
+**v1 현재 한계 (2026-06-22 실측 발견)**:
+- `arduino-libraries/Ethernet` 은 W5500 을 별도 SPI 드라이버로 다룸 (lwIP 미경유)
+- `AsyncTCP` 는 ESP32 lwIP 위에서 동작 → W5500 IP 에서 listen 시 `tcpip_api_call: Invalid mbox` 크래시
+- **v1 우회**: `if (wifi_conn) webServer.begin(...)` — Ethernet 환경에서 WebUI 비활성
+- 펌웨어 boot 시 Serial 로그: `Web UI disabled: requires WiFi (W5500 + AsyncTCP incompatible — see v2.1 LAN unification)`
+
+**v2.1 해결 계획 — LAN 스택 통일**:
+- arduino-libraries/Ethernet 제거 → `<ETH.h>` + `ETH.begin(ETH_PHY_W5500, ...)` (PC v2.3.0 NetManager 패턴)
+- W5500 을 ESP32 lwIP 의 Ethernet PHY 로 등록 → AsyncWebServer 가 Ethernet 환경에서도 정상 동작
+- 의존: platform 을 pioarduino 53.x (Arduino-ESP32 3.x) 로 upgrade, ArduinoHttpClient → HTTPClient, TFT_eSPI 업데이트 + LCD/터치 회귀 검증
+
+### 12.4 v2.1 백로그 (Plan §9 v2.1 백로그와 일치)
+
+| 항목 | 우선순위 | 의존성 |
+|------|:--:|--------|
+| LAN 스택 통일 (ETH.h + ETH_PHY_W5500) | High | platform upgrade, TFT_eSPI update |
+| PNG 디코더 활성화 (lv_png_init + LVGL FS) | Medium | LV_USE_FS_STDIO 또는 custom FS driver |
+| OTA Handler 이식 | Medium | LAN 통일 완료 후 |
+| 로그 뷰어 + WebSocket | Low | OTA 이후 |
+| deviceconfig/serverconfig 웹 편집 | Low | UI 확장 |
 
 ---
 

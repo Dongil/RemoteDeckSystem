@@ -3,7 +3,6 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
-#include <WebServer.h>
 #include <SPIFFS.h>
 #include <HttpClient.h>
 #include <time.h>
@@ -11,11 +10,13 @@
 #include "lvgl_touch.h"
 #include "config/ConfigManager.h"
 #include "device/DeviceManager.h"
-//#include "webserver/WebServerHandler.h"
 #include "mqtt/MQTTHandler.h"
 #include "mqtt/ethernet_mqtt.h"
 #include "images/images.h"
 #include "utils/TypeUtils.h"
+// Design Ref: §5.3 Component List — Web Layer (v2 Image Manager)
+#include "web/WebServer.h"
+#include "web/ImageApi.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -27,16 +28,18 @@ WiFiClient wifi_client;   // Wifi, Mqtt 객체 생성
 PubSubClient mqtt_client(wifi_client);
 MQTTHandler mqttHandler(mqtt_client, deviceConfig, serverConfig);
 
-EthernetClient ethClient; // Ethernet 객체 생성
-PubSubClient mqttEthernet_Client(ethClient); // Ethernet용 mqtt
+EthernetClient ethClient;
+PubSubClient mqttEthernet_Client(ethClient);
 
 // xml에서 읽어와서 ip바꿈
 //HttpClient http(ethClient, "192.168.10.198", 80);  // domain : smartbtn.xenoglobal.co.kr,  port : 1019
 String httpUrl = "";
 uint16_t httpPort = 0;
 
-//WebServer web_server(80);
-//WebServerHandler webServerHandler(deviceConfig, serverConfig, imagesConfig);
+// v2 Web UI - Plan SC: FR-01, FR-02, FR-03
+WebServer webServer;
+ImageApi  imageApi;
+TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
 
@@ -105,11 +108,11 @@ void setup()
 
     delay(500);
 
-    if (Ethernet.localIP() != INADDR_NONE &&    // INADDR_NONE은 0.0.0.0을 의미
-        mqttEthernet_connected() ) {  
-        lv_scr_load(ui_ScreenMain);   // ethernet 정상 연결시
+    if (Ethernet.localIP() != INADDR_NONE &&
+        mqttEthernet_connected() ) {
+        lv_scr_load(ui_ScreenMain);
         ethernet_conn = true;
-        httpRequestUsing = serverConfig.usingHttpRequest;   //Web Server로 상태 명령 보낼때
+        httpRequestUsing = serverConfig.usingHttpRequest;
     }
     else{
         deviceManager = new DeviceManager(deviceConfig, serverConfig, imagesConfig);
@@ -118,6 +121,26 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
+    // Design Ref: §5.3 Component List + §12.3 듀얼 네트워크
+    // 현재 구현: arduino-libraries/Ethernet 은 lwIP 미경유 → AsyncWebServer 비호환.
+    // WiFi 환경에서만 WebServer 활성. LAN 스택 통일(ETH.h + ETH_PHY_W5500)은 별도 PDCA 사이클로 분리.
+    // Plan SC: FR-01, FR-02, FR-03 (WiFi 환경 한정)
+    if (wifi_conn) {
+        String ip = WiFi.localIP().toString();
+        imageApi.setNetworkInfo("wifi", ip);
+        imageApi.setFirmwareInfo(
+            deviceConfig.versionInfo.firmwareDate.empty() ? "1.0.0-touch" : deviceConfig.versionInfo.firmwareDate.c_str(),
+            "2026-06-22");
+        imageApi.attach(&webServer);
+        webServer.setLogger([](const char* event, const char* detail) {
+            Serial.printf("[Web %s] %s\n", event, detail);
+        });
+        webServer.begin(80, &touchAuth);
+        Serial.printf("Web UI: http://%s/ (admin:12345)\n", ip.c_str());
+    } else {
+        Serial.println("Web UI disabled: requires WiFi (W5500 + AsyncTCP incompatible — see v2.1 LAN unification)");
+    }
+
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 
     screen_main = true; //메인 화면으로 왔는지
@@ -125,22 +148,23 @@ void setup()
     Serial.println("setup done");
 }
 
-//HttpClient http(ethClient, httpUrl, httpPort);  // 포트는 변수로 안됨 
-HttpClient http(ethClient, httpUrl, 80);  // domain : smartbtn.xenoglobal.co.kr,  port : 1019
+HttpClient http(ethClient, httpUrl, 80);
 
 void loop()
 {
-    delay(10);  
+    delay(10);
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
-    // Mqtt 사용시 
+    // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
+    imageApi.loop();
+
+    // Mqtt 사용시
     if(ethernet_conn){
         mqttEthernet_loop();          // MQTT keep alive
-    }    
-    
+    }
+
     if(wifi_conn){
         mqttHandler.loop();
-        //web_server.handleClient();
     }
 
     if(httpRequestUsing) {
@@ -423,13 +447,12 @@ void gotoDeviceManager()
     }
 }
 
-// Design Ref: §11.2 M3 — downloadFile() 재작성
+// Design Ref: §11.2 M3 — downloadFile() 재작성 (ArduinoHttpClient 기반)
 // Plan SC: FR-06 (단일 file handle, 청크 단위 write, Content-Length 검증)
-// 변경 포인트:
+// 변경 포인트 (원본 대비):
 //  - 2바이트마다 close/reopen 제거 → 단일 핸들 유지
 //  - 버퍼 1024B, idle 타임아웃 5초, 전체 타임아웃 60초
-//  - Content-Length 불일치 또는 read=0 idle 초과 시 partial 파일 자동 삭제
-//  - 성공/실패 모두 명확한 Serial 로그
+//  - Content-Length 불일치 또는 idle 초과 시 partial 파일 자동 삭제
 bool downloadFile(const char* urlPath, const char* spiffsPath) {
     http.setTimeout(10000);
     http.get(urlPath);
@@ -461,7 +484,6 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
 
     bool ok = true;
     while (ethClient.connected() || http.available()) {
-        // 전체 타임아웃
         if (millis() - startMs > TOTAL_TIMEOUT_MS) {
             Serial.println("Download total timeout");
             ok = false;
@@ -481,7 +503,6 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
 
         int bytesRead = http.read(buffer, BUF_SIZE);
         if (bytesRead <= 0) {
-            // available > 0 인데 read=0 인 경우는 짧은 stall — 다음 루프에서 재시도
             if (millis() - lastDataMillis > IDLE_TIMEOUT_MS) { ok = false; break; }
             delay(5);
             continue;
@@ -496,21 +517,18 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
         totalBytesRead += bytesRead;
         lastDataMillis = millis();
 
-        // Content-Length 도달 시 조기 종료
         if (contentLength > 0 && totalBytesRead >= contentLength) break;
     }
 
     file.flush();
     file.close();
 
-    // Content-Length 검증
     if (ok && contentLength > 0 && totalBytesRead != contentLength) {
         Serial.printf("Size mismatch: got=%d expected=%d\n", totalBytesRead, contentLength);
         ok = false;
     }
 
     if (!ok) {
-        // partial 파일 정리
         SPIFFS.remove(spiffsPath);
         Serial.printf("Download failed, removed partial: %s\n", spiffsPath);
         http.stop();
@@ -521,126 +539,18 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
     return true;
 }
 
-void downloadFileWithResume(const char* urlPath, const char* spiffsPath) {
-
-    // SPIFFS에서 파일 열기 (이미 존재하는 경우 이어받기)
-    File file = SPIFFS.open(spiffsPath, FILE_APPEND);
-    if (!file) {
-        file = SPIFFS.open(spiffsPath, FILE_WRITE);  // 파일이 없으면 새로 생성
-        if (!file) {
-            Serial.println("Failed to open file for writing");
-            return;
-        }
-    }
-
-    // 이미 다운로드된 파일 크기를 확인
-    size_t fileSize = file.size();
-    Serial.print("Resuming download, already downloaded size: ");
-    Serial.println(fileSize);
-
-    // HTTP Range 요청 설정 (이미 다운로드된 부분 이후로 이어받기)
-    http.connectionKeepAlive();
-    http.beginRequest();
-    http.get(urlPath);
-    http.sendHeader("Range", String("bytes=") + fileSize + "-");
-    http.endRequest();
-
-    // 응답 코드 확인
-    int statusCode = http.responseStatusCode();
-    if (statusCode != 200 && statusCode != 206) {  // 206은 Partial Content (이어받기 성공)
-        Serial.print("Failed to download file, status code: ");
-        Serial.println(statusCode);
-        file.close();
-        return;
-    }
-
-    // Content-Length 확인 (전체 파일 길이가 아니라 남은 부분 길이)
-    int contentLength = http.contentLength();
-    if (contentLength == -1) {
-        Serial.println("Failed to get content length for resumed download.");
-        file.close();
-        return;
-    }
-
-    Serial.print("Content-Length for resumed part: ");
-    Serial.println(contentLength);
-
-    // 데이터를 받아서 이어서 파일에 쓰기
-    uint8_t buffer[512];  // 버퍼 크기
-    int totalBytesRead = 0;
-    int writeCounter = 0;
-
-    while (http.available()) {
-        int bytesRead = http.read(buffer, sizeof(buffer));
-        if (bytesRead > 0) {
-            if (writeCounter % 2 == 0) {
-                file.close();  // 파일을 닫고
-                file = SPIFFS.open(spiffsPath, FILE_APPEND);  // 다시 열기
-                if (!file) {
-                    Serial.println("Failed to reopen file for appending");
-                    return;
-                }
-            }
-
-            file.write(buffer, bytesRead);
-            totalBytesRead += bytesRead;
-            writeCounter++;
-            
-            Serial.print("Bytes read: ");
-            Serial.println(bytesRead);
-        }
-
-        if (!ethClient.connected()) {
-            Serial.println("Connection lost during download.");
-            break;
-        }
-    }
-
-    file.close();  // 파일 닫기
-    Serial.print("File saved to: ");
-    Serial.println(spiffsPath);
-    Serial.print("Total bytes downloaded this session: ");
-    Serial.println(totalBytesRead);
-}
-
-void downloadFileWithRetries(const char* urlPath, const char* spiffsPath, int maxRetries) {
-    int retryCount = 0;
-    bool downloadComplete = false;
-
-    while (retryCount < maxRetries && !downloadComplete) {
-        downloadFileWithResume(urlPath, spiffsPath);
-        if (ethClient.connected()) {
-            downloadComplete = true;           
-        } else {
-            Serial.print("Retrying download... Attempt: ");
-            Serial.println(retryCount + 1);
-            retryCount++;
-            delay(5000);  // 재시도 간격을 두기 위해 5초 대기
-        }
-    }
-
-    if (!downloadComplete) {
-        Serial.println("Failed to complete the download after retries.");
-    }
-}
-
 void sendHttpMessage(const char* msg) {
-    // serverConfig.statusUrl : status_url = "/attend_status.php?node_id=[device_id]&status=[status]" [device_id]자리에 장치 id [status] 자리에 msg 넣어서 완성
     std::string httpRequestPath = TypeUtils::makeHttpPath(serverConfig.statusUrl, deviceConfig.deviceID, msg);
     Serial.print("Sending GET request to: ");
     Serial.print(httpUrl);
     Serial.println(httpRequestPath.c_str());
 
-    // HTTP GET 요청 보내기
     http.get(httpRequestPath.c_str());
-
-    // 응답 코드 확인
     int statusCode = http.responseStatusCode();
     String response = http.responseBody();
-    
+
     if (statusCode != 200) {
-        Serial.print("Fail to Request server , status code: ");
-        Serial.println(statusCode);
+        Serial.printf("Fail to Request server , status code: %d\n", statusCode);
         return;
     }
 
