@@ -2,110 +2,17 @@
 // SquareLine Studio version: SquareLine Studio 1.3.4
 // LVGL version: 8.3.6
 // Project name: 2432_1
+//
+// NOTE (2026-06-22): SquareLine 자동생성 stub과 DeviceManager.cpp 가 동일 심볼을 정의해
+// linker multiple-definition 오류 발생. 실제 구현은 src/device/DeviceManager.cpp 와
+// src/main.cpp 에 존재하므로 stub들은 제거. 단, 어디서도 구현되지 않는 ibtnLogo_Click
+// (ui.c::ui_event_ibtnLogo 에서 호출됨)만 빈 stub으로 유지.
+// SquareLine Studio 에서 UI 재생성 시에도 이 구조를 유지해야 함.
 
 #include "ui.h"
 
-void ibtnLogo_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void ibtnRoom_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnSaveID_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnLoadMqtt_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnLoadImages_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void ibtnWifi_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnReboot_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void deviceInput_Focused(lv_event_t * e)
-{
-	// Your code here
-}
-
-void deviceInput_Defocused(lv_event_t * e)
-{
-	// Your code here
-}
-
-void chkDhcp_Checked(lv_event_t * e)
-{
-	// Your code here
-}
-
-void chkDhcp_Unchecked(lv_event_t * e)
-{
-	// Your code here
-}
-
-void ethernetInput_Focused(lv_event_t * e)
-{
-	// Your code here
-}
-
-void ethernetInput_Defocused(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnEthernetConn_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void txtaPassword_Focused(lv_event_t * e)
-{
-	// Your code here
-}
-
-void txtaPassword_Defocused(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnSerch_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void btnWifiConn_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void ibtnEthernet_Click(lv_event_t * e)
-{
-	// Your code here
-}
-
-void chkLookPass_Checked(lv_event_t * e)
-{
-	// Your code here
-}
-
-void ibtnDevice_Click(lv_event_t * e)
-{
-	// Your code here
+// 사용처 없음 — main.cpp 의 ibtnLogo_LongClick 만 실제로 동작
+// ui.c::ui_event_ibtnLogo 의 LV_EVENT_CLICKED 분기를 위해 빈 stub 유지
+void ibtnLogo_Click(lv_event_t * e) {
+    (void)e;
 }

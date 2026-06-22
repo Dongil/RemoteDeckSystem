@@ -632,8 +632,8 @@
 #endif
 
 /*PNG decoder library*/
-// Design Ref: §4 Image Decode — lv_png + lodepng 활성화 (Touch 리팩토링 v2)
-#define LV_USE_PNG 1
+// TODO(v2): lv_png_init() + LVGL FS driver 등록 방식으로 전환 후 1로 변경
+#define LV_USE_PNG 0
 
 /*BMP decoder library*/
 #define LV_USE_BMP 1
