@@ -4,8 +4,14 @@
 #include "images.h"
 #include <Arduino.h>
 
-// 최소 디코드 가용 heap (디코드 직전 체크)
-static constexpr size_t MIN_DECODE_HEAP = 30 * 1024;
+// v2.1: 메모리 안전 한계
+// - MIN_DECODE_HEAP: 디코드 후 시스템 동작 위한 여유 (~30KB)
+// - MAX_IMAGE_PIXELS: 디코드 결과 RGB565 버퍼 최대 크기 (320x240 = 153.6KB)
+//   PNG 의 경우 fileBuf + RGBA + RGB565 동시 점유로 실제 피크는 ~2x
+static constexpr size_t MIN_DECODE_HEAP   = 30 * 1024;
+static constexpr uint32_t MAX_IMAGE_W     = 320;
+static constexpr uint32_t MAX_IMAGE_H     = 320;
+static constexpr size_t   MAX_IMAGE_BYTES = MAX_IMAGE_W * MAX_IMAGE_H * 2;  // RGB565 154KB
 
 // 전역 LVGL 이미지 디스크립터 (외부 참조용 - 기존 코드 호환)
 lv_img_dsc_t img_photo = {};
@@ -43,7 +49,8 @@ static bool endsWithCI(const char* s, const char* suffix) {
 bool decode_image_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
     if (!filepath || !img_dsc) return false;
     if (ESP.getFreeHeap() < MIN_DECODE_HEAP) {
-        Serial.printf("Decode skip: low heap %u < %u\n", ESP.getFreeHeap(), (unsigned)MIN_DECODE_HEAP);
+        Serial.printf("Decode skip: low heap %u < %u (file=%s)\n",
+                      ESP.getFreeHeap(), (unsigned)MIN_DECODE_HEAP, filepath);
         return false;
     }
     if (endsWithCI(filepath, ".png")) {
@@ -89,13 +96,37 @@ bool read_bmp_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
         return false;
     }
 
+    // v2.1 fix: 크기 한도 + heap 가용량 사전 검증
+    if (width > MAX_IMAGE_W || height > MAX_IMAGE_H) {
+        Serial.printf("BMP reject: %ux%u > limit %ux%u\n",
+                      width, height, (unsigned)MAX_IMAGE_W, (unsigned)MAX_IMAGE_H);
+        bmpFile.close();
+        return false;
+    }
+
     size_t imgSize = (size_t)width * height * 2; // RGB565 = 2 bytes/pixel
+    if (imgSize > MAX_IMAGE_BYTES) {
+        Serial.printf("BMP reject: imgSize %u > limit %u\n",
+                      (unsigned)imgSize, (unsigned)MAX_IMAGE_BYTES);
+        bmpFile.close();
+        return false;
+    }
+    size_t freeHeap = ESP.getFreeHeap();
+    if (imgSize + MIN_DECODE_HEAP > freeHeap) {
+        Serial.printf("BMP reject: need %u + %u guard > free %u\n",
+                      (unsigned)imgSize, (unsigned)MIN_DECODE_HEAP, (unsigned)freeHeap);
+        bmpFile.close();
+        return false;
+    }
+
     uint16_t* pixelData = (uint16_t*)malloc(imgSize);
     if (!pixelData) {
         Serial.printf("BMP malloc failed: %u bytes (free=%u)\n", (unsigned)imgSize, ESP.getFreeHeap());
         bmpFile.close();
         return false;
     }
+    Serial.printf("BMP decode: %ux%u %u bytes (heap free=%u, after-alloc free=%u)\n",
+                  width, height, (unsigned)imgSize, (unsigned)freeHeap, ESP.getFreeHeap());
 
     // 행당 패딩 계산 (4-byte 정렬, 24bit BMP에 한함)
     uint32_t bytesPerPixel = bpp / 8;
@@ -211,19 +242,22 @@ bool read_png_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
 // /download/ 우선, fallback /images/ — 디코드 후 LVGL src 갱신
 // Design Ref: §12.1 — 새 dsc 할당 전 기존 data free
 static void try_set(lv_obj_t* target, lv_img_dsc_t* dsc, const char* role) {
-    // 두 후보 경로 (PNG 우선, BMP fallback)
-    const char* candidates[4] = {
-        nullptr, nullptr, nullptr, nullptr
-    };
+    // v2.1 fix: 디코드 전에 OLD 데이터 먼저 free → 동일 role 메모리 두번 점유 방지
+    // (디코드 실패 시 빈 화면 가능성 있으나, OLD + NEW 동시 점유로 OOM 회피가 우선)
+    size_t oldSize = dsc->data_size;
+    if (oldSize) {
+        free_img_dsc(dsc);
+        Serial.printf("Image [%s]: freed old %u bytes (heap free=%u)\n",
+                      role, (unsigned)oldSize, ESP.getFreeHeap());
+    }
+
+    // 후보 경로 (PNG 우선, BMP fallback)
     char buf[4][64];
     snprintf(buf[0], sizeof(buf[0]), "/download/%s.png", role);
     snprintf(buf[1], sizeof(buf[1]), "/download/%s.bmp", role);
     snprintf(buf[2], sizeof(buf[2]), "/images/%s.png",   role);
     snprintf(buf[3], sizeof(buf[3]), "/images/%s.bmp",   role);
-    candidates[0] = buf[0];
-    candidates[1] = buf[1];
-    candidates[2] = buf[2];
-    candidates[3] = buf[3];
+    const char* candidates[4] = { buf[0], buf[1], buf[2], buf[3] };
 
     lv_img_dsc_t tmp = {};
     bool ok = false;
@@ -238,21 +272,32 @@ static void try_set(lv_obj_t* target, lv_img_dsc_t* dsc, const char* role) {
     }
 
     if (!ok) {
-        Serial.printf("Image load failed for role: %s\n", role);
+        Serial.printf("Image load failed for role: %s (heap free=%u, min=%u)\n",
+                      role, ESP.getFreeHeap(), ESP.getMinFreeHeap());
         return;
     }
 
-    // 기존 데이터 해제 후 새 데이터 바인딩
-    free_img_dsc(dsc);
     *dsc = tmp;
     lv_img_set_src(target, dsc);
     lv_obj_invalidate(target);
 }
 
 void images_update() {
-    Serial.printf("images_update start (free heap=%u)\n", ESP.getFreeHeap());
+    size_t heapStart = ESP.getFreeHeap();
+    size_t minStart  = ESP.getMinFreeHeap();
+    Serial.printf("images_update start (heap free=%u, min=%u)\n", (unsigned)heapStart, (unsigned)minStart);
+
     try_set(ui_ibtnLogo,   &img_title, "title");
     try_set(ui_ImagePhoto, &img_photo, "photo");
     try_set(ui_ImageName,  &img_name,  "name");
-    Serial.printf("images_update done  (free heap=%u)\n", ESP.getFreeHeap());
+
+    size_t heapEnd = ESP.getFreeHeap();
+    size_t minEnd  = ESP.getMinFreeHeap();
+    size_t totalImg = (img_title.data ? img_title.data_size : 0)
+                    + (img_photo.data ? img_photo.data_size : 0)
+                    + (img_name.data  ? img_name.data_size  : 0);
+    Serial.printf("images_update done  (heap free=%u, min=%u, lcd-buffers=%u)\n",
+                  (unsigned)heapEnd, (unsigned)minEnd, (unsigned)totalImg);
+    Serial.printf("  peak consumed: %u, persistent: %u\n",
+                  (unsigned)(heapStart - minEnd), (unsigned)(heapStart - heapEnd));
 }

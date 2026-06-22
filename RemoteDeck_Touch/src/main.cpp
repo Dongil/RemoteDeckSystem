@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <SPIFFS.h>
-#include <HttpClient.h>
+#include <HTTPClient.h>  // ESP32 내장 (대문자) — v2.1 ArduinoHttpClient 대체
 #include <time.h>
 
 #include "lvgl_touch.h"
@@ -28,7 +28,8 @@ WiFiClient wifi_client;   // Wifi, Mqtt 객체 생성
 PubSubClient mqtt_client(wifi_client);
 MQTTHandler mqttHandler(mqtt_client, deviceConfig, serverConfig);
 
-EthernetClient ethClient;
+// v2.1: WiFiClient는 lwIP socket이라 ETH/WiFi 공용 (Design §2.3)
+WiFiClient ethClient;
 PubSubClient mqttEthernet_Client(ethClient);
 
 // xml에서 읽어와서 ip바꿈
@@ -66,80 +67,67 @@ bool downloadFile(const char* urlPath, const char* spiffsPath); // download file
 void sendHttpMessage(const char* msg);  //http request로 메세지 전송 함수
 void message_process(String msg);   //mqtt, webrequest에서 받아온 메세지 처리 함수
 void gotoDeviceManager();   //장치 설정으로 이동
+void ibtnLogo_LongClick(lv_event_t * e);  // v2.1: LV_EVENT_LONG_PRESSED 핸들러 (setup() 에서 직접 등록)
 
 void setup()
 {
     Serial.begin(115200);
 
-    //delay(5000);
-    
-    lvgl_touch_init(240, 320);  // Initialize LVGL + Touch
+    // v2.1 C6: setup() 순서 재배치 — ETH(W5500) 를 LCD(TFT_eSPI) 보다 먼저 초기화
+    // 두 디바이스가 SPI 버스 공유 (SCK=18, MOSI=23, MISO=19) — W5500 reset/init이 TFT_eSPI 점유 후엔 실패.
+    // SPIFFS + Config 먼저 로드 → ETH 초기화 → LCD 초기화 순으로 처리.
 
-    ui_init();  // Initialize UI
-    
-    lv_timer_handler(); //초기화면 리플레쉬
-
+    // 1) SPIFFS + 설정 로드
     if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
-      Serial.println("SPIFFS Mount Failed");
-      return;
+        Serial.println("SPIFFS Mount Failed");
+        return;
     }
-
-    // Load configurations
     ConfigManager::loadDeviceConfig(deviceConfig);
     ConfigManager::loadServerConfig(serverConfig);
     ConfigManager::loadImagesConfig(imagesConfig);
+    delay(100);
 
-    delay(500);
-    
-    // 저장된 설정에서 ip, port를 파싱해옴
-    if(TypeUtils::parseAddress(deviceConfig.serverURL.c_str(), httpUrl, httpPort)) {
-        Serial.println("Http Ip : ");
-        Serial.println(httpUrl);
-        Serial.println("Http Port : ");
-        Serial.println(httpPort);        
-    }
-    else {
+    // 저장된 설정에서 ip, port를 파싱
+    if (TypeUtils::parseAddress(deviceConfig.serverURL.c_str(), httpUrl, httpPort)) {
+        Serial.printf("Http Ip : %s\nHttp Port : %u\n", httpUrl.c_str(), httpPort);
+    } else {
         Serial.println("Server URL parsing Error!");
     }
 
-    // 먼저 ethernet mqtt 연결 시도 
-    mqttEthernet_init(); // Initialize Ethernet + MQTT
-    mqttEthernet_setCallback(mqtt_ReceivedCallback); // Set MQTT callback
+    // 2) ETH(W5500) 먼저 초기화 — SPI 버스 점유 (TFT_eSPI 이전)
+    mqttEthernet_init();
+    mqttEthernet_setCallback(mqtt_ReceivedCallback);
+
+    // 3) LCD(TFT_eSPI) + LVGL 초기화 — ETH 이후
+    lvgl_touch_init(240, 320);
+    ui_init();
+
+    // v2.1 fix: SquareLine 자동생성 ui_event_ibtnLogo 는 LV_EVENT_CLICKED 만 처리.
+    // LV_EVENT_LONG_PRESSED 를 main.cpp 의 ibtnLogo_LongClick 으로 직접 라우팅.
+    lv_obj_add_event_cb(ui_ibtnLogo, ibtnLogo_LongClick, LV_EVENT_LONG_PRESSED, NULL);
+
+    lv_timer_handler();
 
     delay(500);
 
-    if (Ethernet.localIP() != INADDR_NONE &&
+    if (ETH.localIP() != IPAddress(0, 0, 0, 0) &&
         mqttEthernet_connected() ) {
         lv_scr_load(ui_ScreenMain);
         ethernet_conn = true;
         httpRequestUsing = serverConfig.usingHttpRequest;
     }
-    else{
+    else {
         deviceManager = new DeviceManager(deviceConfig, serverConfig, imagesConfig);
         deviceManager->showDeviceSet();
     }
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // Design Ref: §5.3 Component List + §12.3 듀얼 네트워크
-    // 현재 구현: arduino-libraries/Ethernet 은 lwIP 미경유 → AsyncWebServer 비호환.
-    // WiFi 환경에서만 WebServer 활성. LAN 스택 통일(ETH.h + ETH_PHY_W5500)은 별도 PDCA 사이클로 분리.
-    // Plan SC: FR-01, FR-02, FR-03 (WiFi 환경 한정)
-    if (wifi_conn) {
-        String ip = WiFi.localIP().toString();
-        imageApi.setNetworkInfo("wifi", ip);
-        imageApi.setFirmwareInfo(
-            deviceConfig.versionInfo.firmwareDate.empty() ? "1.0.0-touch" : deviceConfig.versionInfo.firmwareDate.c_str(),
-            "2026-06-22");
-        imageApi.attach(&webServer);
-        webServer.setLogger([](const char* event, const char* detail) {
-            Serial.printf("[Web %s] %s\n", event, detail);
-        });
-        webServer.begin(80, &touchAuth);
-        Serial.printf("Web UI: http://%s/ (admin:12345)\n", ip.c_str());
-    } else {
-        Serial.println("Web UI disabled: requires WiFi (W5500 + AsyncTCP incompatible — see v2.1 LAN unification)");
-    }
+    // v2.1: WebServer 비활성화 — AsyncTCP task slot 충돌로 listen 안 됨 ('failed to start task').
+    // Touch 환경(LVGL + W5500 + PubSubClient + AsyncTCP)에서 task config 미해결.
+    // v2.2 에서 esphome fork 또는 지연 시작 패턴으로 재시도 예정.
+    // LAN 스택 통일 (ETH.h + ETH_PHY_W5500) 자체는 v2.1 에서 완료 — 향후 WebUI 활성화 시 즉시 사용 가능.
+    Serial.println("Web UI: deferred to v2.2 (AsyncTCP task slot conflict)");
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 
@@ -148,7 +136,8 @@ void setup()
     Serial.println("setup done");
 }
 
-HttpClient http(ethClient, httpUrl, 80);
+// v2.1 C4: HTTPClient (ESP32 내장) - lwIP 위에서 ETH/WiFi 모두 동작
+HTTPClient http;
 
 void loop()
 {
@@ -447,30 +436,48 @@ void gotoDeviceManager()
     }
 }
 
-// Design Ref: §11.2 M3 — downloadFile() 재작성 (ArduinoHttpClient 기반)
-// Plan SC: FR-06 (단일 file handle, 청크 단위 write, Content-Length 검증)
-// 변경 포인트 (원본 대비):
-//  - 2바이트마다 close/reopen 제거 → 단일 핸들 유지
-//  - 버퍼 1024B, idle 타임아웃 5초, 전체 타임아웃 60초
-//  - Content-Length 불일치 또는 idle 초과 시 partial 파일 자동 삭제
+// v2.1 C4: HTTPClient (ESP32 내장) 기반 — Design §11.2
+// Plan SC: FR-06, FR-07 (HTTPClient 호환)
 bool downloadFile(const char* urlPath, const char* spiffsPath) {
+    String fullUrl = String("http://") + httpUrl + urlPath;
     http.setTimeout(10000);
-    http.get(urlPath);
+    http.setConnectTimeout(10000);
 
-    int statusCode = http.responseStatusCode();
-    if (statusCode != 200) {
-        Serial.printf("Download HTTP %d: %s\n", statusCode, urlPath);
-        http.stop();
+    if (!http.begin(fullUrl)) {
+        Serial.printf("Download begin failed: %s\n", fullUrl.c_str());
         return false;
     }
 
-    int contentLength = http.contentLength();
-    Serial.printf("Download start: %s (Content-Length=%d)\n", urlPath, contentLength);
+    int statusCode = http.GET();
+    if (statusCode != HTTP_CODE_OK) {
+        Serial.printf("Download HTTP %d: %s\n", statusCode, fullUrl.c_str());
+        http.end();
+        return false;
+    }
+
+    int contentLength = http.getSize();
+    Serial.printf("Download start: %s (Content-Length=%d)\n", fullUrl.c_str(), contentLength);
+
+    // v2.1 fix: 이미지 파일은 SPIFFS + 디코딩 메모리 한계 고려해 200KB 상한 적용
+    // (BMP 24bit 320x240 raw = 230KB / 디코드 후 RGB565 153KB. PNG 240x320 RGBA decode = 307KB)
+    const int DOWNLOAD_MAX_BYTES = 200 * 1024;
+    if (contentLength > DOWNLOAD_MAX_BYTES) {
+        Serial.printf("Download reject: too large %d > %d bytes\n", contentLength, DOWNLOAD_MAX_BYTES);
+        http.end();
+        return false;
+    }
 
     File file = SPIFFS.open(spiffsPath, FILE_WRITE);
     if (!file) {
         Serial.printf("SPIFFS open failed: %s\n", spiffsPath);
-        http.stop();
+        http.end();
+        return false;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    if (!stream) {
+        file.close();
+        http.end();
         return false;
     }
 
@@ -483,15 +490,15 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
     unsigned long startMs = millis();
 
     bool ok = true;
-    while (ethClient.connected() || http.available()) {
+    while (http.connected() && (contentLength <= 0 || totalBytesRead < contentLength)) {
         if (millis() - startMs > TOTAL_TIMEOUT_MS) {
             Serial.println("Download total timeout");
             ok = false;
             break;
         }
 
-        int avail = http.available();
-        if (avail <= 0) {
+        size_t avail = stream->available();
+        if (avail == 0) {
             if (millis() - lastDataMillis > IDLE_TIMEOUT_MS) {
                 Serial.println("Download idle timeout");
                 ok = false;
@@ -501,7 +508,7 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
             continue;
         }
 
-        int bytesRead = http.read(buffer, BUF_SIZE);
+        int bytesRead = stream->readBytes(buffer, std::min(avail, BUF_SIZE));
         if (bytesRead <= 0) {
             if (millis() - lastDataMillis > IDLE_TIMEOUT_MS) { ok = false; break; }
             delay(5);
@@ -516,12 +523,11 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
         }
         totalBytesRead += bytesRead;
         lastDataMillis = millis();
-
-        if (contentLength > 0 && totalBytesRead >= contentLength) break;
     }
 
     file.flush();
     file.close();
+    http.end();
 
     if (ok && contentLength > 0 && totalBytesRead != contentLength) {
         Serial.printf("Size mismatch: got=%d expected=%d\n", totalBytesRead, contentLength);
@@ -531,7 +537,6 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
     if (!ok) {
         SPIFFS.remove(spiffsPath);
         Serial.printf("Download failed, removed partial: %s\n", spiffsPath);
-        http.stop();
         return false;
     }
 
@@ -540,23 +545,28 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
 }
 
 void sendHttpMessage(const char* msg) {
+    // v2.1 C4: HTTPClient 기반
     std::string httpRequestPath = TypeUtils::makeHttpPath(serverConfig.statusUrl, deviceConfig.deviceID, msg);
+    String fullUrl = String("http://") + httpUrl + httpRequestPath.c_str();
     Serial.print("Sending GET request to: ");
-    Serial.print(httpUrl);
-    Serial.println(httpRequestPath.c_str());
+    Serial.println(fullUrl);
 
-    http.get(httpRequestPath.c_str());
-    int statusCode = http.responseStatusCode();
-    String response = http.responseBody();
-
-    if (statusCode != 200) {
-        Serial.printf("Fail to Request server , status code: %d\n", statusCode);
+    if (!http.begin(fullUrl)) {
+        Serial.println("sendHttpMessage begin failed");
         return;
     }
+    http.setTimeout(10000);
+    int statusCode = http.GET();
+    if (statusCode != HTTP_CODE_OK) {
+        Serial.printf("Fail to Request server , status code: %d\n", statusCode);
+        http.end();
+        return;
+    }
+    String response = http.getString();
+    http.end();
 
     Serial.print("Response: ");
     Serial.println(response);
-    http.stop();
 
     message_process(response);
 }
@@ -571,14 +581,16 @@ void mqttConnect_ReConnect() {
 }
 
 /////////////////// 상단 로고 꾹 누르고 있을때 UI 이벤트 처리  ////////////////////////////
+// v2.1: 진입 조건 완화 — long-press 1회로 DeviceManager 진입
+// (이전: 35회 long-press 누적 in 2초 → 사실상 진입 불가능)
 void ibtnLogo_LongClick(lv_event_t * e)
 {
-    if(!screen_main){
-        return;
-    }
+    if (!screen_main) return;
 
-    clickCount++;
-    clickCount_t = millis();
+    Serial.println("ibtnLogo long-press → DeviceManager");
+    screen_main = false;
+    clickCount = 0;
+    gotoDeviceManager();
 }
 
 /////////////////// 재부재 버턴 UI 이벤트 처리  ////////////////////////////

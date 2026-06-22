@@ -1,93 +1,74 @@
 #include "ethernet_mqtt.h"
-#include "esp_mac.h"   // esp_read_mac, ESP_MAC_ETH (Arduino-ESP32 3.x에서는 자동 include 안 됨)
 
-extern ConfigManager configManager; // ConfigManager 인스턴스는 외부에서 선언된 것으로 가정
-extern DeviceConfig deviceConfig;   // 장치 설정 
-extern ServerConfig serverConfig;   // 서버 설정
+extern ConfigManager configManager;
+extern DeviceConfig deviceConfig;
+extern ServerConfig serverConfig;
 
-extern EthernetClient ethClient;
+// Design Ref: §2.3 — WiFiClient는 lwIP socket → ETH/WiFi 공용
+extern WiFiClient ethClient;
 extern PubSubClient mqttEthernet_Client;
 
 extern void mqttConnect_Broken();
 extern void mqttConnect_ReConnect();
 
 int retryCount = 0;
-const int maxRetries = 5;   // Ethernet MQTT 재시도 최대 횟수
-bool conn_broken = false;   // mqtt 연결 끊김
+const int maxRetries = 5;
+bool conn_broken = false;
 
 void mqttEthernet_init()
 {
-    // W5500 initialization
+    // Design Ref: §2.3, §12.3 — ETH_PHY_W5500 인라인 이식 (PC v2.3.0 NetManager 패턴)
+    // Plan SC: FR-01, FR-02 (lwIP 통합으로 AsyncWebServer Ethernet 호환)
     SPI.begin(SCK_GPIO, MISO_GPIO, MOSI_GPIO, W5500_CS_GPIO);
-    Ethernet.init(W5500_CS_GPIO); // W5500 CS 핀 설정
+    Serial.println("Network: Initializing W5500 via ETH.h");
 
-    delay(100);
-    
-    // 링크 상태 확인
-    if (Ethernet.linkStatus() == LinkON) {
-        Serial.println("Ethernet cable is connected.");
-    } else {
-        Serial.println("Ethernet cable is not connected.");
+    if (!ETH.begin(ETH_PHY_W5500, 1, W5500_CS_GPIO, INT_GPIO, -1, SPI)) {
+        Serial.println("ETH.begin() failed");
         return;
-    }    
+    }
 
-    // dhcp 사용으로 이더넷 연결
-    byte mac[6];
-    esp_read_mac(mac, ESP_MAC_ETH);  // MAC 주소 읽기
-
-    char strMAC[18];  // "XX:XX:XX:XX:XX:XX" 형태의 문자열을 저장할 배열 (17 + NULL 문자 1개)
-    mqttEthernet_macToStr(mac, strMAC);  // MAC 주소 변환 함수 호출
-
-    unsigned ethRetry_t = millis();
-
-    // 고정 IP 또는 DHCP 선택
+    // 고정 IP 또는 DHCP — DHCP는 ETH 이벤트가 자동 처리
     if (deviceConfig.networkConfig.usingStatic) {
         Serial.println("Static IP configuration is used.");
-
-        // 고정 IP 사용
-        IPAddress staticIP = stringToIPAddress(deviceConfig.networkConfig.staticIP);
+        IPAddress staticIP      = stringToIPAddress(deviceConfig.networkConfig.staticIP);
         IPAddress staticGateway = stringToIPAddress(deviceConfig.networkConfig.staticGateway);
-        IPAddress staticSubnet = stringToIPAddress(deviceConfig.networkConfig.staticSubnet);
-        IPAddress primaryDNS = stringToIPAddress(deviceConfig.networkConfig.staticPrimaryDNS);
-        //IPAddress secondaryDNS = stringToIPAddress(deviceConfig.networkConfig.staticSecondaryDNS);
-
-        Ethernet.begin(mac, staticIP, primaryDNS, staticGateway, staticSubnet);
-           
-        while ( millis() - ethRetry_t < 5000){
-            Serial.print(".");
-            delay(100);
-        }
+        IPAddress staticSubnet  = stringToIPAddress(deviceConfig.networkConfig.staticSubnet);
+        IPAddress primaryDNS    = stringToIPAddress(deviceConfig.networkConfig.staticPrimaryDNS);
+        ETH.config(staticIP, staticGateway, staticSubnet, primaryDNS);
     } else {
         Serial.println("Dhcp IP configuration is used.");
+    }
 
-        // DHCP 사용
-        while (Ethernet.begin(mac) == 0 && millis() - ethRetry_t < 5000){
-            Serial.print(".");
-            delay(100);
-        }
+    // 링크 + IP 획득 폴링 (최대 10초) - Design §12.3
+    unsigned long start = millis();
+    while ((ETH.localIP() == IPAddress(0, 0, 0, 0)) && (millis() - start < 10000)) {
+        Serial.print(".");
+        delay(200);
     }
-    
-    // IP 주소 확인
-    if (Ethernet.localIP() != INADDR_NONE) {  // INADDR_NONE은 0.0.0.0을 의미
-        deviceConfig.networkConfig.staticMAC = strMAC;   // Ethernet MAC 을 가져와서 장치설정에 저장
-        configManager.saveDeviceConfig(deviceConfig);
-        Serial.print("Ethernet connected, MAC address: ");
-        Serial.print(deviceConfig.networkConfig.staticMAC.c_str());
-        Serial.print(", IP address: ");
-        Serial.println(Ethernet.localIP());
-    } else {
+    Serial.println();
+
+    if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
         Serial.println("Failed to configure Ethernet.");
+        return;
     }
+
+    // MAC 주소 저장 - ETH.macAddress() 가 String 반환
+    String macStr = ETH.macAddress();
+    deviceConfig.networkConfig.staticMAC = macStr.c_str();
+    configManager.saveDeviceConfig(deviceConfig);
+
+    Serial.print("Ethernet connected, MAC address: ");
+    Serial.print(macStr);
+    Serial.print(", IP address: ");
+    Serial.println(ETH.localIP());
 
     delay(100);
-
 
     Serial.print("Try to Connect Mqtt server, Url : ");
     Serial.print(serverConfig.mqttConfig.url.c_str());
     Serial.print(", Port : ");
     Serial.println(serverConfig.mqttConfig.port);
 
-    // MQTT server setup
     mqttEthernet_Client.setServer(serverConfig.mqttConfig.url.c_str(), serverConfig.mqttConfig.port);
     mqttEthernet_connect();
 }
@@ -105,7 +86,7 @@ void mqttEthernet_connect() {
     //}
     
     // IP 주소 확인
-    if (Ethernet.localIP() == INADDR_NONE) {  // INADDR_NONE은 0.0.0.0을 의미
+    if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
         Serial.println("Mqtt Not Try Connect. Failed to configure Ethernet");
         return;
     }
@@ -165,7 +146,7 @@ void mqttEthernet_reconnect() {
     //}
     
     // IP 주소 확인
-    if (Ethernet.localIP() == INADDR_NONE) {  // INADDR_NONE은 0.0.0.0을 의미
+    if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
         Serial.println("Mqtt Not Try Connect. Failed to configure Ethernet");
         return;
     }
@@ -250,7 +231,7 @@ void mqttEthernet_publish(const char* msg){
     doc["device_id"] = deviceConfig.deviceID.c_str();
     doc["status"] = msg;
     doc["mac"] = deviceConfig.networkConfig.staticMAC.c_str();
-    doc["ip"] = Ethernet.localIP();
+    doc["ip"] = ETH.localIP();
     
     // JSON 객체를 문자열로 변환합니다
     char payload[256];

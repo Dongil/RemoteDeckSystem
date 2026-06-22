@@ -1,4 +1,5 @@
 #include "DeviceManager.h"
+#include "lvgl_touch.h"   // v2.1 fix: screen_saver_init() 사용
 
 extern DeviceManager* deviceManager;   // 장치 연결 관리자
 
@@ -136,18 +137,42 @@ void DeviceManager::connectToEthernet() {
     ethernetInfo_Changed();
 }
 
-void DeviceManager::updateDeviceInfo() {    
+// v2.1 fix: ui_dropSleep 옵션 ↔ 분 단위 sleepTime 매핑
+// dropdown options: "No\n1\n2\n3\n4\n5\n10\n20\n30\n60" → 0 / 1 / 2 / 3 / 4 / 5 / 10 / 20 / 30 / 60 분
+static const int kSleepOptions[] = {0, 1, 2, 3, 4, 5, 10, 20, 30, 60};
+static const uint16_t kSleepOptionCount = sizeof(kSleepOptions) / sizeof(kSleepOptions[0]);
+
+static uint16_t sleepMinutesToIndex(int minutes) {
+    for (uint16_t i = 0; i < kSleepOptionCount; ++i) {
+        if (kSleepOptions[i] == minutes) return i;
+    }
+    return 0; // 매칭 없으면 "No"
+}
+
+void DeviceManager::updateDeviceInfo() {
     lv_textarea_set_text(ui_txtaDeviceID, deviceConfig.deviceID.c_str());
     lv_textarea_set_text(ui_txtaServerurl, deviceConfig.serverURL.c_str());
+    // v2.1 fix: 저장된 sleepTime 값을 dropdown 에 표시 (serverConfig.sleepTime 우선 — main.cpp setup() 사용처)
+    lv_dropdown_set_selected(ui_dropSleep, sleepMinutesToIndex(serverConfig.sleepTime));
 }
 
 void DeviceManager::saveToDevice() {
     deviceConfig.deviceID = lv_textarea_get_text(ui_txtaDeviceID);
     deviceConfig.serverURL = lv_textarea_get_text(ui_txtaServerurl);
-        
-    ConfigManager::saveDeviceConfig(deviceConfig);    
 
-    Serial.println("Device info changed!");
+    // v2.1 fix: ui_dropSleep 선택값을 분 단위로 변환 후 두 config 모두 갱신
+    uint16_t idx = lv_dropdown_get_selected(ui_dropSleep);
+    int sleepMin = (idx < kSleepOptionCount) ? kSleepOptions[idx] : 0;
+    serverConfig.sleepTime = sleepMin;
+    deviceConfig.sleepTime = sleepMin;
+
+    ConfigManager::saveDeviceConfig(deviceConfig);
+    ConfigManager::saveServerConfig(serverConfig);
+
+    // 즉시 적용 — 재부팅 없이 새 timeout 으로 화면보호기 갱신
+    screen_saver_init(sleepMin);
+
+    Serial.printf("Device info changed! sleepTime=%d min (idx=%u)\n", sleepMin, idx);
 }
 
 // 메시지 박스의 이벤트 처리 콜백 함수

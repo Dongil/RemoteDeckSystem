@@ -2,8 +2,8 @@
 #define DEVICE_MANAGER_H
 
 #include <WiFi.h>
-#include <EthernetClient.h>
-#include <HttpClient.h>
+// EthernetClient → WiFiClient (lwIP 통합 후 ETH/WiFi 공용)
+#include <HTTPClient.h>
 #include <lvgl.h>
 
 #include "ui.h"
