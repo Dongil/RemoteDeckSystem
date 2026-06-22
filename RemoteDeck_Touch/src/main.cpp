@@ -67,6 +67,7 @@ bool downloadFile(const char* urlPath, const char* spiffsPath); // download file
 void sendHttpMessage(const char* msg);  //http request로 메세지 전송 함수
 void message_process(String msg);   //mqtt, webrequest에서 받아온 메세지 처리 함수
 void gotoDeviceManager();   //장치 설정으로 이동
+void ibtnLogo_LongClick(lv_event_t * e);  // v2.1: LV_EVENT_LONG_PRESSED 핸들러 (setup() 에서 직접 등록)
 
 void setup()
 {
@@ -100,6 +101,11 @@ void setup()
     // 3) LCD(TFT_eSPI) + LVGL 초기화 — ETH 이후
     lvgl_touch_init(240, 320);
     ui_init();
+
+    // v2.1 fix: SquareLine 자동생성 ui_event_ibtnLogo 는 LV_EVENT_CLICKED 만 처리.
+    // LV_EVENT_LONG_PRESSED 를 main.cpp 의 ibtnLogo_LongClick 으로 직접 라우팅.
+    lv_obj_add_event_cb(ui_ibtnLogo, ibtnLogo_LongClick, LV_EVENT_LONG_PRESSED, NULL);
+
     lv_timer_handler();
 
     delay(500);
@@ -117,34 +123,11 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // Design Ref: §5.3 + §12.3 — v2.1 LAN 통일로 Ethernet/WiFi 모두 lwIP 위에서 동작
-    // Plan SC: FR-01, FR-02, FR-03 (Ethernet 환경 정상화)
-    {
-        const char* iface = "none";
-        String ip = "0.0.0.0";
-        if (ethernet_conn) {
-            iface = "ethernet";
-            ip = ETH.localIP().toString();
-        } else if (wifi_conn) {
-            iface = "wifi";
-            ip = WiFi.localIP().toString();
-        }
-
-        if (ethernet_conn || wifi_conn) {
-            imageApi.setNetworkInfo(iface, ip);
-            imageApi.setFirmwareInfo(
-                deviceConfig.versionInfo.firmwareDate.empty() ? "1.0.0-touch" : deviceConfig.versionInfo.firmwareDate.c_str(),
-                "2026-06-22");
-            imageApi.attach(&webServer);
-            webServer.setLogger([](const char* event, const char* detail) {
-                Serial.printf("[Web %s] %s\n", event, detail);
-            });
-            webServer.begin(80, &touchAuth);
-            Serial.printf("Web UI: http://%s/ (admin:12345)\n", ip.c_str());
-        } else {
-            Serial.println("Web UI disabled: no network");
-        }
-    }
+    // v2.1: WebServer 비활성화 — AsyncTCP task slot 충돌로 listen 안 됨 ('failed to start task').
+    // Touch 환경(LVGL + W5500 + PubSubClient + AsyncTCP)에서 task config 미해결.
+    // v2.2 에서 esphome fork 또는 지연 시작 패턴으로 재시도 예정.
+    // LAN 스택 통일 (ETH.h + ETH_PHY_W5500) 자체는 v2.1 에서 완료 — 향후 WebUI 활성화 시 즉시 사용 가능.
+    Serial.println("Web UI: deferred to v2.2 (AsyncTCP task slot conflict)");
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 
