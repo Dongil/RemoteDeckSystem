@@ -72,40 +72,35 @@ void setup()
 {
     Serial.begin(115200);
 
-    //delay(5000);
-    
-    lvgl_touch_init(240, 320);  // Initialize LVGL + Touch
+    // v2.1 C6: setup() 순서 재배치 — ETH(W5500) 를 LCD(TFT_eSPI) 보다 먼저 초기화
+    // 두 디바이스가 SPI 버스 공유 (SCK=18, MOSI=23, MISO=19) — W5500 reset/init이 TFT_eSPI 점유 후엔 실패.
+    // SPIFFS + Config 먼저 로드 → ETH 초기화 → LCD 초기화 순으로 처리.
 
-    ui_init();  // Initialize UI
-    
-    lv_timer_handler(); //초기화면 리플레쉬
-
+    // 1) SPIFFS + 설정 로드
     if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
-      Serial.println("SPIFFS Mount Failed");
-      return;
+        Serial.println("SPIFFS Mount Failed");
+        return;
     }
-
-    // Load configurations
     ConfigManager::loadDeviceConfig(deviceConfig);
     ConfigManager::loadServerConfig(serverConfig);
     ConfigManager::loadImagesConfig(imagesConfig);
+    delay(100);
 
-    delay(500);
-    
-    // 저장된 설정에서 ip, port를 파싱해옴
-    if(TypeUtils::parseAddress(deviceConfig.serverURL.c_str(), httpUrl, httpPort)) {
-        Serial.println("Http Ip : ");
-        Serial.println(httpUrl);
-        Serial.println("Http Port : ");
-        Serial.println(httpPort);        
-    }
-    else {
+    // 저장된 설정에서 ip, port를 파싱
+    if (TypeUtils::parseAddress(deviceConfig.serverURL.c_str(), httpUrl, httpPort)) {
+        Serial.printf("Http Ip : %s\nHttp Port : %u\n", httpUrl.c_str(), httpPort);
+    } else {
         Serial.println("Server URL parsing Error!");
     }
 
-    // 먼저 ethernet mqtt 연결 시도 
-    mqttEthernet_init(); // Initialize Ethernet + MQTT
-    mqttEthernet_setCallback(mqtt_ReceivedCallback); // Set MQTT callback
+    // 2) ETH(W5500) 먼저 초기화 — SPI 버스 점유 (TFT_eSPI 이전)
+    mqttEthernet_init();
+    mqttEthernet_setCallback(mqtt_ReceivedCallback);
+
+    // 3) LCD(TFT_eSPI) + LVGL 초기화 — ETH 이후
+    lvgl_touch_init(240, 320);
+    ui_init();
+    lv_timer_handler();
 
     delay(500);
 
@@ -115,7 +110,7 @@ void setup()
         ethernet_conn = true;
         httpRequestUsing = serverConfig.usingHttpRequest;
     }
-    else{
+    else {
         deviceManager = new DeviceManager(deviceConfig, serverConfig, imagesConfig);
         deviceManager->showDeviceSet();
     }

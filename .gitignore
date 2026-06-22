@@ -36,3 +36,5 @@ desktop.ini
 
 # firmware build: distribute binaries via repo, ignore intermediates
 # RemoteDeck_PC/firmware/  ← 배포 binary는 추적 (전체 펌웨어 + OTA)
+# v2.1: TFT_eSPI bundled lib backup (use bodmer/TFT_eSPI@^2.5 via lib_deps instead)
+RemoteDeck_Touch/lib/TFT_eSPI.v2.4.61.bak/
