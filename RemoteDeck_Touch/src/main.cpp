@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <SPIFFS.h>
-#include <HttpClient.h>
+#include <HTTPClient.h>  // ESP32 내장 (대문자) — v2.1 ArduinoHttpClient 대체
 #include <time.h>
 
 #include "lvgl_touch.h"
@@ -28,7 +28,8 @@ WiFiClient wifi_client;   // Wifi, Mqtt 객체 생성
 PubSubClient mqtt_client(wifi_client);
 MQTTHandler mqttHandler(mqtt_client, deviceConfig, serverConfig);
 
-EthernetClient ethClient;
+// v2.1: WiFiClient는 lwIP socket이라 ETH/WiFi 공용 (Design §2.3)
+WiFiClient ethClient;
 PubSubClient mqttEthernet_Client(ethClient);
 
 // xml에서 읽어와서 ip바꿈
@@ -108,7 +109,7 @@ void setup()
 
     delay(500);
 
-    if (Ethernet.localIP() != INADDR_NONE &&
+    if (ETH.localIP() != IPAddress(0, 0, 0, 0) &&
         mqttEthernet_connected() ) {
         lv_scr_load(ui_ScreenMain);
         ethernet_conn = true;
@@ -121,24 +122,33 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // Design Ref: §5.3 Component List + §12.3 듀얼 네트워크
-    // 현재 구현: arduino-libraries/Ethernet 은 lwIP 미경유 → AsyncWebServer 비호환.
-    // WiFi 환경에서만 WebServer 활성. LAN 스택 통일(ETH.h + ETH_PHY_W5500)은 별도 PDCA 사이클로 분리.
-    // Plan SC: FR-01, FR-02, FR-03 (WiFi 환경 한정)
-    if (wifi_conn) {
-        String ip = WiFi.localIP().toString();
-        imageApi.setNetworkInfo("wifi", ip);
-        imageApi.setFirmwareInfo(
-            deviceConfig.versionInfo.firmwareDate.empty() ? "1.0.0-touch" : deviceConfig.versionInfo.firmwareDate.c_str(),
-            "2026-06-22");
-        imageApi.attach(&webServer);
-        webServer.setLogger([](const char* event, const char* detail) {
-            Serial.printf("[Web %s] %s\n", event, detail);
-        });
-        webServer.begin(80, &touchAuth);
-        Serial.printf("Web UI: http://%s/ (admin:12345)\n", ip.c_str());
-    } else {
-        Serial.println("Web UI disabled: requires WiFi (W5500 + AsyncTCP incompatible — see v2.1 LAN unification)");
+    // Design Ref: §5.3 + §12.3 — v2.1 LAN 통일로 Ethernet/WiFi 모두 lwIP 위에서 동작
+    // Plan SC: FR-01, FR-02, FR-03 (Ethernet 환경 정상화)
+    {
+        const char* iface = "none";
+        String ip = "0.0.0.0";
+        if (ethernet_conn) {
+            iface = "ethernet";
+            ip = ETH.localIP().toString();
+        } else if (wifi_conn) {
+            iface = "wifi";
+            ip = WiFi.localIP().toString();
+        }
+
+        if (ethernet_conn || wifi_conn) {
+            imageApi.setNetworkInfo(iface, ip);
+            imageApi.setFirmwareInfo(
+                deviceConfig.versionInfo.firmwareDate.empty() ? "1.0.0-touch" : deviceConfig.versionInfo.firmwareDate.c_str(),
+                "2026-06-22");
+            imageApi.attach(&webServer);
+            webServer.setLogger([](const char* event, const char* detail) {
+                Serial.printf("[Web %s] %s\n", event, detail);
+            });
+            webServer.begin(80, &touchAuth);
+            Serial.printf("Web UI: http://%s/ (admin:12345)\n", ip.c_str());
+        } else {
+            Serial.println("Web UI disabled: no network");
+        }
     }
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
@@ -148,7 +158,8 @@ void setup()
     Serial.println("setup done");
 }
 
-HttpClient http(ethClient, httpUrl, 80);
+// v2.1 C4: HTTPClient (ESP32 내장) - lwIP 위에서 ETH/WiFi 모두 동작
+HTTPClient http;
 
 void loop()
 {
@@ -447,30 +458,39 @@ void gotoDeviceManager()
     }
 }
 
-// Design Ref: §11.2 M3 — downloadFile() 재작성 (ArduinoHttpClient 기반)
-// Plan SC: FR-06 (단일 file handle, 청크 단위 write, Content-Length 검증)
-// 변경 포인트 (원본 대비):
-//  - 2바이트마다 close/reopen 제거 → 단일 핸들 유지
-//  - 버퍼 1024B, idle 타임아웃 5초, 전체 타임아웃 60초
-//  - Content-Length 불일치 또는 idle 초과 시 partial 파일 자동 삭제
+// v2.1 C4: HTTPClient (ESP32 내장) 기반 — Design §11.2
+// Plan SC: FR-06, FR-07 (HTTPClient 호환)
 bool downloadFile(const char* urlPath, const char* spiffsPath) {
+    String fullUrl = String("http://") + httpUrl + urlPath;
     http.setTimeout(10000);
-    http.get(urlPath);
+    http.setConnectTimeout(10000);
 
-    int statusCode = http.responseStatusCode();
-    if (statusCode != 200) {
-        Serial.printf("Download HTTP %d: %s\n", statusCode, urlPath);
-        http.stop();
+    if (!http.begin(fullUrl)) {
+        Serial.printf("Download begin failed: %s\n", fullUrl.c_str());
         return false;
     }
 
-    int contentLength = http.contentLength();
-    Serial.printf("Download start: %s (Content-Length=%d)\n", urlPath, contentLength);
+    int statusCode = http.GET();
+    if (statusCode != HTTP_CODE_OK) {
+        Serial.printf("Download HTTP %d: %s\n", statusCode, fullUrl.c_str());
+        http.end();
+        return false;
+    }
+
+    int contentLength = http.getSize();
+    Serial.printf("Download start: %s (Content-Length=%d)\n", fullUrl.c_str(), contentLength);
 
     File file = SPIFFS.open(spiffsPath, FILE_WRITE);
     if (!file) {
         Serial.printf("SPIFFS open failed: %s\n", spiffsPath);
-        http.stop();
+        http.end();
+        return false;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    if (!stream) {
+        file.close();
+        http.end();
         return false;
     }
 
@@ -483,15 +503,15 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
     unsigned long startMs = millis();
 
     bool ok = true;
-    while (ethClient.connected() || http.available()) {
+    while (http.connected() && (contentLength <= 0 || totalBytesRead < contentLength)) {
         if (millis() - startMs > TOTAL_TIMEOUT_MS) {
             Serial.println("Download total timeout");
             ok = false;
             break;
         }
 
-        int avail = http.available();
-        if (avail <= 0) {
+        size_t avail = stream->available();
+        if (avail == 0) {
             if (millis() - lastDataMillis > IDLE_TIMEOUT_MS) {
                 Serial.println("Download idle timeout");
                 ok = false;
@@ -501,7 +521,7 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
             continue;
         }
 
-        int bytesRead = http.read(buffer, BUF_SIZE);
+        int bytesRead = stream->readBytes(buffer, std::min(avail, BUF_SIZE));
         if (bytesRead <= 0) {
             if (millis() - lastDataMillis > IDLE_TIMEOUT_MS) { ok = false; break; }
             delay(5);
@@ -516,12 +536,11 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
         }
         totalBytesRead += bytesRead;
         lastDataMillis = millis();
-
-        if (contentLength > 0 && totalBytesRead >= contentLength) break;
     }
 
     file.flush();
     file.close();
+    http.end();
 
     if (ok && contentLength > 0 && totalBytesRead != contentLength) {
         Serial.printf("Size mismatch: got=%d expected=%d\n", totalBytesRead, contentLength);
@@ -531,7 +550,6 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
     if (!ok) {
         SPIFFS.remove(spiffsPath);
         Serial.printf("Download failed, removed partial: %s\n", spiffsPath);
-        http.stop();
         return false;
     }
 
@@ -540,23 +558,28 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
 }
 
 void sendHttpMessage(const char* msg) {
+    // v2.1 C4: HTTPClient 기반
     std::string httpRequestPath = TypeUtils::makeHttpPath(serverConfig.statusUrl, deviceConfig.deviceID, msg);
+    String fullUrl = String("http://") + httpUrl + httpRequestPath.c_str();
     Serial.print("Sending GET request to: ");
-    Serial.print(httpUrl);
-    Serial.println(httpRequestPath.c_str());
+    Serial.println(fullUrl);
 
-    http.get(httpRequestPath.c_str());
-    int statusCode = http.responseStatusCode();
-    String response = http.responseBody();
-
-    if (statusCode != 200) {
-        Serial.printf("Fail to Request server , status code: %d\n", statusCode);
+    if (!http.begin(fullUrl)) {
+        Serial.println("sendHttpMessage begin failed");
         return;
     }
+    http.setTimeout(10000);
+    int statusCode = http.GET();
+    if (statusCode != HTTP_CODE_OK) {
+        Serial.printf("Fail to Request server , status code: %d\n", statusCode);
+        http.end();
+        return;
+    }
+    String response = http.getString();
+    http.end();
 
     Serial.print("Response: ");
     Serial.println(response);
-    http.stop();
 
     message_process(response);
 }
