@@ -458,6 +458,15 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
     int contentLength = http.getSize();
     Serial.printf("Download start: %s (Content-Length=%d)\n", fullUrl.c_str(), contentLength);
 
+    // v2.1 fix: 이미지 파일은 SPIFFS + 디코딩 메모리 한계 고려해 200KB 상한 적용
+    // (BMP 24bit 320x240 raw = 230KB / 디코드 후 RGB565 153KB. PNG 240x320 RGBA decode = 307KB)
+    const int DOWNLOAD_MAX_BYTES = 200 * 1024;
+    if (contentLength > DOWNLOAD_MAX_BYTES) {
+        Serial.printf("Download reject: too large %d > %d bytes\n", contentLength, DOWNLOAD_MAX_BYTES);
+        http.end();
+        return false;
+    }
+
     File file = SPIFFS.open(spiffsPath, FILE_WRITE);
     if (!file) {
         Serial.printf("SPIFFS open failed: %s\n", spiffsPath);
@@ -572,14 +581,16 @@ void mqttConnect_ReConnect() {
 }
 
 /////////////////// 상단 로고 꾹 누르고 있을때 UI 이벤트 처리  ////////////////////////////
+// v2.1: 진입 조건 완화 — long-press 1회로 DeviceManager 진입
+// (이전: 35회 long-press 누적 in 2초 → 사실상 진입 불가능)
 void ibtnLogo_LongClick(lv_event_t * e)
 {
-    if(!screen_main){
-        return;
-    }
+    if (!screen_main) return;
 
-    clickCount++;
-    clickCount_t = millis();
+    Serial.println("ibtnLogo long-press → DeviceManager");
+    screen_main = false;
+    clickCount = 0;
+    gotoDeviceManager();
 }
 
 /////////////////// 재부재 버턴 UI 이벤트 처리  ////////////////////////////
