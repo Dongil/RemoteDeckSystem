@@ -123,11 +123,24 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // v2.1: WebServer 비활성화 — AsyncTCP task slot 충돌로 listen 안 됨 ('failed to start task').
-    // Touch 환경(LVGL + W5500 + PubSubClient + AsyncTCP)에서 task config 미해결.
-    // v2.2 에서 esphome fork 또는 지연 시작 패턴으로 재시도 예정.
-    // LAN 스택 통일 (ETH.h + ETH_PHY_W5500) 자체는 v2.1 에서 완료 — 향후 WebUI 활성화 시 즉시 사용 가능.
-    Serial.println("Web UI: deferred to v2.2 (AsyncTCP task slot conflict)");
+    // v2.3-httpd module-poc: esp_http_server (ESP-IDF native) 활성화
+    // Design Ref: §2.1 — core 0 별도 task, LVGL/MQTT (core 1) 와 물리 격리
+    // Plan SC: FR-01, FR-02 (PoC gate), FR-08 (Basic Auth)
+    // ImageApi.attach() 는 module-webui 단계에서 — module-poc 는 /api/status 만.
+    {
+        IPAddress ip = ETH.localIP();
+        imageApi.setNetworkInfo("ethernet", ip.toString());
+        imageApi.setFirmwareInfo("2.3.0-poc", "2026-06-23");
+    }
+    webServer.setStatusGetter([]() {
+        // Plan SC: FR-02 — PoC 시나리오에서 1초 응답
+        return imageApi.buildStatusJson();
+    });
+    if (webServer.begin(80, &touchAuth)) {
+        Serial.println("WebServer (esp_http_server) started on port 80");
+    } else {
+        Serial.println("WebServer start FAILED — PoC gate fail, check serial");
+    }
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 

@@ -1,133 +1,181 @@
-// Design Ref: §4 API Specification, §5.3 — Web Layer 구현
-// Plan SC: FR-01, FR-02, FR-08, FR-09, FR-10, FR-12
+// Design Ref: §2.1, §4 API Spec — esp_http_server 래퍼 구현
+//   - module-poc 단계: /api/status + / (welcome) 만 활성
+//   - 향후 module-webui 에서 /api/images/*, /api/config, /api/log, /api/imagesconfig 추가
+//   - module-control 에서 /api/control (Long polling), module-ota 에서 /api/ota
+// Plan SC: FR-01, FR-02 (PoC), FR-08 (Basic Auth)
 
 #include "WebServer.h"
-#include <SPIFFS.h>
+#include <esp_log.h>
+#include <mbedtls/base64.h>
+#include <string.h>
 
-void WebServer::begin(uint16_t port, const TouchAuth* auth) {
+static const char* TAG = "WebServer";
+
+bool WebServer::begin(uint16_t port, const TouchAuth* auth) {
     _auth = auth;
-    _server = new AsyncWebServer(port);
 
-    setupStaticFiles();
-    setupAPI();
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    // Design Ref: §2.1 — core 0 pinning, LVGL/MQTT (core 1) 와 물리 격리
+    cfg.server_port      = port;
+    cfg.task_priority    = 5;            // Plan SC: FR-01 (별도 task)
+    cfg.stack_size       = 8192;         // upload chunk + JSON 처리 여유
+    cfg.core_id          = 0;            // ★ 핵심: LVGL/MQTT 와 별도 코어
+    cfg.max_open_sockets = 7;            // Design §6.2 — Long polling socket 여유
+    cfg.max_uri_handlers = 16;           // /api/* 14 + / + 여유 1
+    cfg.lru_purge_enable = true;         // socket 부족 시 LRU 정리
 
-    _server->begin();
-    Serial.printf("WebServer: started on port %u (auth=%s)\n", port, _auth ? "on" : "off");
-}
-
-bool WebServer::requireAuth(AsyncWebServerRequest* req) {
-    if (!_auth) return true;
-    if (!req->authenticate(_auth->user, _auth->pass)) {
-        req->requestAuthentication("RemoteDeck_Touch");
+    esp_err_t err = httpd_start(&_server, &cfg);
+    if (err != ESP_OK) {
+        Serial.printf("[%s] httpd_start failed: %d\n", TAG, err);
+        _server = nullptr;
         return false;
     }
+
+    registerHandlers();
+
+    Serial.printf("[%s] started on port %u, core 0, task_priority 5, auth=%s\n",
+                  TAG, port, _auth ? "on" : "off");
     return true;
 }
 
-void WebServer::setupStaticFiles() {
-    // Design Ref: §3.2 SPIFFS Layout — /www/ 가 웹 UI 자산
-    auto& h = _server->serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html");
-    if (_auth) h.setAuthentication(_auth->user, _auth->pass);
+void WebServer::stop() {
+    if (_server) {
+        httpd_stop(_server);
+        _server = nullptr;
+    }
+}
+
+void WebServer::send401(httpd_req_t* req) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"RemoteDeck_Touch\"");
+    httpd_resp_set_type(req, "application/json");
+    const char* body = "{\"ok\":false,\"error\":\"unauthorized\"}";
+    httpd_resp_send(req, body, strlen(body));
+}
+
+void WebServer::sendJson(httpd_req_t* req, int statusCode, const char* json) {
+    char status[16];
+    switch (statusCode) {
+        case 200: strcpy(status, "200 OK"); break;
+        case 400: strcpy(status, "400 Bad Request"); break;
+        case 404: strcpy(status, "404 Not Found"); break;
+        case 413: strcpy(status, "413 Too Large"); break;
+        case 500: strcpy(status, "500 Internal"); break;
+        default:  snprintf(status, sizeof(status), "%d Status", statusCode); break;
+    }
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, strlen(json));
+}
+
+// Basic Auth — Authorization 헤더 파싱 + base64 디코딩 + user:pass 비교
+// Design Ref: §10.4, §7 — Single Source of Truth
+bool WebServer::requireAuth(httpd_req_t* req) {
+    if (!_auth) return true;  // auth 비활성 모드
+
+    size_t hdrLen = httpd_req_get_hdr_value_len(req, "Authorization");
+    if (hdrLen == 0 || hdrLen > 256) {
+        send401(req);
+        return false;
+    }
+
+    char hdr[260];
+    if (httpd_req_get_hdr_value_str(req, "Authorization", hdr, sizeof(hdr)) != ESP_OK) {
+        send401(req);
+        return false;
+    }
+
+    // "Basic <base64>"
+    const char* prefix = "Basic ";
+    if (strncmp(hdr, prefix, 6) != 0) {
+        send401(req);
+        return false;
+    }
+
+    // base64 decode
+    unsigned char decoded[128];
+    size_t outLen = 0;
+    if (mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &outLen,
+                              (const unsigned char*)(hdr + 6),
+                              strlen(hdr + 6)) != 0) {
+        send401(req);
+        return false;
+    }
+    decoded[outLen] = '\0';
+
+    // "user:pass" 비교
+    char expected[64];
+    snprintf(expected, sizeof(expected), "%s:%s", _auth->user, _auth->pass);
+    if (strcmp((char*)decoded, expected) != 0) {
+        send401(req);
+        return false;
+    }
+
+    return true;
 }
 
 void WebServer::logEvent(const char* event, const char* detail) {
     if (_onLog) _onLog(event, detail);
 }
 
-void WebServer::setupAPI() {
-    // GET /api/status — heap, spiffs, uptime, network
-    _server->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest* req) {
-        if (!requireAuth(req)) return;
-        if (_getStatus) req->send(200, "application/json", _getStatus());
-        else req->send(500, "application/json", "{\"ok\":false,\"error\":\"no handler\"}");
-    });
+// --- URI Handler 등록 ---
+// module-poc: /api/status + / (welcome)
+// 향후 모듈은 같은 패턴으로 trampoline + handle* 쌍을 추가
+void WebServer::registerHandlers() {
+    httpd_uri_t status_uri = {
+        .uri      = "/api/status",
+        .method   = HTTP_GET,
+        .handler  = &WebServer::trampolineStatus,
+        .user_ctx = this
+    };
+    httpd_register_uri_handler(_server, &status_uri);
 
-    // GET /api/images/list
-    _server->on("/api/images/list", HTTP_GET, [this](AsyncWebServerRequest* req) {
-        if (!requireAuth(req)) return;
-        if (_getImagesList) req->send(200, "application/json", _getImagesList());
-        else req->send(500, "application/json", "{\"ok\":false}");
-    });
+    httpd_uri_t root_uri = {
+        .uri      = "/",
+        .method   = HTTP_GET,
+        .handler  = &WebServer::trampolineRoot,
+        .user_ctx = this
+    };
+    httpd_register_uri_handler(_server, &root_uri);
+}
 
-    // GET /api/imagesconfig
-    _server->on("/api/imagesconfig", HTTP_GET, [this](AsyncWebServerRequest* req) {
-        if (!requireAuth(req)) return;
-        if (_getImagesConfig) req->send(200, "application/json", _getImagesConfig());
-        else req->send(404);
-    });
+// --- Trampolines (C → C++) ---
+esp_err_t WebServer::trampolineStatus(httpd_req_t* req) {
+    auto* self = static_cast<WebServer*>(req->user_ctx);
+    return self->handleStatus(req);
+}
 
-    // GET /api/images/<name> — raw image file (browser preview)
-    _server->on("^\\/api\\/images\\/(.+)$", HTTP_GET, [this](AsyncWebServerRequest* req) {
-        if (!requireAuth(req)) return;
-        String name = req->pathArg(0);
-        if (name.indexOf("..") >= 0 || name.indexOf('/') >= 0) {
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad name\"}");
-            return;
-        }
-        String path = String("/images/") + name;
-        if (!SPIFFS.exists(path)) {
-            req->send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
-            return;
-        }
-        const char* mime = name.endsWith(".png") ? "image/png" : "image/bmp";
-        req->send(SPIFFS, path, mime);
-    });
+esp_err_t WebServer::trampolineRoot(httpd_req_t* req) {
+    auto* self = static_cast<WebServer*>(req->user_ctx);
+    return self->handleRoot(req);
+}
 
-    // DELETE /api/images/<name>
-    _server->on("^\\/api\\/images\\/(.+)$", HTTP_DELETE, [this](AsyncWebServerRequest* req) {
-        if (!requireAuth(req)) return;
-        String name = req->pathArg(0);
-        if (name.indexOf("..") >= 0 || name.indexOf('/') >= 0) {
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"bad name\"}");
-            return;
-        }
-        String path = String("/images/") + name;
-        bool removed = SPIFFS.remove(path);
-        if (_deleteImage) _deleteImage(name);
-        char detail[80]; snprintf(detail, sizeof(detail), "%s (%s)", name.c_str(), removed ? "ok" : "missing");
-        logEvent("IMG_DELETE", detail);
-        String body = String("{\"ok\":") + (removed ? "true" : "false") + ",\"name\":\"" + name + "\"}";
-        req->send(200, "application/json", body);
-    });
+// --- Handlers ---
+esp_err_t WebServer::handleStatus(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
 
-    // POST /api/images/upload — multipart/form-data upload
-    _server->on("/api/images/upload", HTTP_POST,
-        [this](AsyncWebServerRequest* req) {
-            // upload 완료 후 호출되는 응답 핸들러
-            // 실제 파일 처리는 아래 upload handler 에서 수행됨
-            if (!requireAuth(req)) return;
-            AsyncWebServerResponse* res = req->beginResponse(200, "application/json",
-                "{\"ok\":true,\"reloaded\":true}");
-            res->addHeader("Connection", "close");
-            req->send(res);
-        },
-        // upload handler — 청크 단위 호출
-        [this](AsyncWebServerRequest* req, const String& filename,
-               size_t index, uint8_t* data, size_t len, bool isFinal) {
-            if (!requireAuth(req)) return;
-            if (index == 0) {
-                Serial.printf("Upload start: %s (total=%u)\n", filename.c_str(), (unsigned)req->contentLength());
-                if (_uploadStart) _uploadStart(filename, req->contentLength());
-            }
-            bool ok = _uploadChunk ? _uploadChunk(data, len, isFinal) : false;
-            if (!ok) {
-                Serial.println("Upload chunk failed");
-            }
-            if (isFinal) {
-                char detail[120];
-                snprintf(detail, sizeof(detail), "%s (%u bytes, %s)",
-                         filename.c_str(), (unsigned)(index + len), ok ? "ok" : "fail");
-                logEvent("IMG_UPLOAD", detail);
-            }
-        }
-    );
+    if (_getStatus) {
+        String body = _getStatus();
+        sendJson(req, 200, body.c_str());
+    } else {
+        sendJson(req, 500, "{\"ok\":false,\"error\":\"no_handler\"}");
+    }
+    return ESP_OK;
+}
 
-    // 404 fallback
-    _server->onNotFound([this](AsyncWebServerRequest* req) {
-        if (req->url().startsWith("/api/")) {
-            req->send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
-        } else {
-            req->send(404, "text/plain", "Not found");
-        }
-    });
+// module-poc: 루트는 단순 welcome.
+// module-webui 에서 SPIFFS /www/index.html 서빙으로 교체.
+esp_err_t WebServer::handleRoot(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    const char* html =
+        "<!doctype html><meta charset=utf-8>"
+        "<title>RemoteDeck_Touch v2.3.0 (PoC)</title>"
+        "<h1>RemoteDeck_Touch v2.3.0 — module-poc</h1>"
+        "<p>esp_http_server alive on core 0.</p>"
+        "<p><a href=/api/status>/api/status</a></p>";
+    httpd_resp_send(req, html, strlen(html));
+    return ESP_OK;
 }
