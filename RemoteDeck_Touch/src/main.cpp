@@ -15,8 +15,7 @@
 #include "images/images.h"
 #include "utils/TypeUtils.h"
 // Design Ref: §5.3 Component List — Web Layer (v2 Image Manager)
-#include "web/WebServer.h"
-#include "web/ImageApi.h"
+#include "web/WebServer.h"  // v2.2 sync TouchWebServer (ImageApi 는 Phase 2 에서 재작성)
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -38,8 +37,8 @@ String httpUrl = "";
 uint16_t httpPort = 0;
 
 // v2 Web UI - Plan SC: FR-01, FR-02, FR-03
-WebServer webServer;
-ImageApi  imageApi;
+// v2.2 PoC: sync TouchWebServer (Arduino 내장 WebServer 기반)
+TouchWebServer webServer;
 TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -123,11 +122,31 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // v2.1: WebServer 비활성화 — AsyncTCP task slot 충돌로 listen 안 됨 ('failed to start task').
-    // Touch 환경(LVGL + W5500 + PubSubClient + AsyncTCP)에서 task config 미해결.
-    // v2.2 에서 esphome fork 또는 지연 시작 패턴으로 재시도 예정.
-    // LAN 스택 통일 (ETH.h + ETH_PHY_W5500) 자체는 v2.1 에서 완료 — 향후 WebUI 활성화 시 즉시 사용 가능.
-    Serial.println("Web UI: deferred to v2.2 (AsyncTCP task slot conflict)");
+    // v2.2 PoC: sync WebServer 활성화 (별도 task 없음, handleClient() 는 loop() 에서 호출)
+    // Design Ref: §2.0 Option C, §12.1 PoC
+    if (ethernet_conn || wifi_conn) {
+        webServer.setStatusGetter([]() -> String {
+            char buf[256];
+            const char* iface = ethernet_conn ? "ethernet" : (wifi_conn ? "wifi" : "none");
+            IPAddress ip = ethernet_conn ? ETH.localIP() : WiFi.localIP();
+            snprintf(buf, sizeof(buf),
+                "{\"ok\":true,\"poc\":true,\"uptime_sec\":%u,\"heap_free\":%u,\"heap_min\":%u,"
+                "\"network\":{\"iface\":\"%s\",\"ip\":\"%s\"},\"fw\":\"v2.2-poc\"}",
+                (unsigned)(millis() / 1000),
+                (unsigned)ESP.getFreeHeap(),
+                (unsigned)ESP.getMinFreeHeap(),
+                iface, ip.toString().c_str());
+            return String(buf);
+        });
+        webServer.setLogger([](const char* event, const char* detail) {
+            Serial.printf("[Web %s] %s\n", event, detail);
+        });
+        webServer.begin(80, &touchAuth);
+        IPAddress ip = ethernet_conn ? ETH.localIP() : WiFi.localIP();
+        Serial.printf("Web UI (PoC): http://%s/api/status (admin:12345)\n", ip.toString().c_str());
+    } else {
+        Serial.println("Web UI skipped: no network");
+    }
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 
@@ -144,8 +163,9 @@ void loop()
     delay(10);
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
-    // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
-    imageApi.loop();
+    // v2.2 PoC: sync WebServer handleClient() — main loop 에서 직접 호출 (별도 task 없음)
+    // 협력적 yield 는 Phase 2 업로드 핸들러에서 적용 예정
+    webServer.handleClient();
 
     // Mqtt 사용시
     if(ethernet_conn){

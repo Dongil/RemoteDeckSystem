@@ -1,52 +1,39 @@
 #pragma once
-// Design Ref: §5.3 Component List — Web Layer (RemoteDeck_PC 패턴 슬림 이식)
-// Plan SC: FR-01, FR-09, FR-12 (브라우저 접근, Basic Auth, 듀얼 네트워크)
+// Design Ref: §2.0 Option C — sync WebServer (Arduino 내장) + 협력적 yield
+// Design Ref: §12.1 — Phase 1 PoC (sync + W5500 + MQTT 동시 동작 검증)
+//
+// AsyncWebServer (v2.1, mathieucarbou) 가 W5500 + MQTT 환경에서 task slot 충돌로 실패.
+// sync WebServer 는 별도 task 생성 안 함 → handleClient() 를 main loop 에서 호출.
 
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>     // ESP32 Arduino 내장 (대소문자 주의: 소문자 'w' 아님)
 #include <functional>
 
-// Touch 전용 간이 인증 (PC의 AuthConfig 와 동일 인터페이스)
 struct TouchAuth {
     const char* user = "admin";
     const char* pass = "12345";
 };
 
-class WebServer {
+class TouchWebServer {
 public:
     void begin(uint16_t port, const TouchAuth* auth);
+    void handleClient();   // main loop 에서 매 iteration 호출
 
-    using StatusGetter   = std::function<String()>;
-    using ImagesListGetter = std::function<String()>;
-    using ImagesConfigGetter = std::function<String()>;
-    using ImageDeleteHandler = std::function<bool(const String& name)>;
-    using ImageUploadStarter  = std::function<void(const String& filename, size_t total)>;
-    using ImageUploadChunk    = std::function<bool(uint8_t* data, size_t len, bool isFinal)>;
-    using LogCallback = std::function<void(const char* event, const char* detail)>;
+    using StatusGetter = std::function<String()>;
+    using LogCallback  = std::function<void(const char* event, const char* detail)>;
 
-    void setStatusGetter(StatusGetter cb)             { _getStatus       = cb; }
-    void setImagesListGetter(ImagesListGetter cb)     { _getImagesList   = cb; }
-    void setImagesConfigGetter(ImagesConfigGetter cb) { _getImagesConfig = cb; }
-    void setImageDeleteHandler(ImageDeleteHandler cb) { _deleteImage     = cb; }
-    void setImageUploadStarter(ImageUploadStarter cb) { _uploadStart     = cb; }
-    void setImageUploadChunk(ImageUploadChunk cb)     { _uploadChunk     = cb; }
-    void setLogger(LogCallback cb)                    { _onLog           = cb; }
+    void setStatusGetter(StatusGetter cb) { _getStatus = cb; }
+    void setLogger(LogCallback cb)        { _onLog = cb; }
 
-    AsyncWebServer* server() { return _server; }
+    // 노출 (Phase 2 에서 ImageApi 등이 직접 등록 시 사용)
+    ::WebServer& server() { return _server; }
 
 private:
-    AsyncWebServer* _server = nullptr;
-    const TouchAuth* _auth  = nullptr;
+    ::WebServer _server { 80 };          // sync WebServer, 기본 80
+    const TouchAuth* _auth = nullptr;
+    StatusGetter _getStatus = nullptr;
+    LogCallback _onLog = nullptr;
 
-    StatusGetter         _getStatus       = nullptr;
-    ImagesListGetter     _getImagesList   = nullptr;
-    ImagesConfigGetter   _getImagesConfig = nullptr;
-    ImageDeleteHandler   _deleteImage     = nullptr;
-    ImageUploadStarter   _uploadStart     = nullptr;
-    ImageUploadChunk     _uploadChunk     = nullptr;
-    LogCallback          _onLog           = nullptr;
-
-    bool requireAuth(AsyncWebServerRequest* req);
-    void setupStaticFiles();
-    void setupAPI();
+    bool requireAuth();
+    void setupRoutes();
     void logEvent(const char* event, const char* detail);
 };
