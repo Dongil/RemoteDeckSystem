@@ -23,8 +23,86 @@ document.querySelectorAll('nav .tab').forEach(b => {
     b.classList.add('active');
     $('page-' + b.dataset.tab).classList.add('active');
     if (b.dataset.tab === 'logs') refreshLogs();
+    if (b.dataset.tab === 'control') refreshControl();
   });
 });
+
+// ── CONTROL TAB (LCD mirror) ───────────────────
+let _imagesConfig = null;
+let _ctrlTimer = null;
+
+function lcdImgUrl(role, status) {
+  // status('IN'/'OUT') 면 photo 자리에 in.bmp/out.bmp 우선, 없으면 photo
+  const t = Date.now();
+  if (role === 'photo') {
+    if (status === 'IN')  return `/api/images/in.bmp?t=${t}`;
+    if (status === 'OUT') return `/api/images/out.bmp?t=${t}`;
+  }
+  return `/api/images/${role}.bmp?t=${t}`;
+}
+
+async function loadLcdImages(status) {
+  // imagesconfig 의 url 사용도 가능하나 단순화: role 기반 fallback
+  const setSrc = (id, role) => {
+    const url = lcdImgUrl(role, status);
+    const img = $(id);
+    img.onerror = () => {
+      // fallback: png 시도
+      const alt = url.replace('.bmp', '.png');
+      if (img.src !== alt) img.src = alt;
+    };
+    img.src = url;
+  };
+  setSrc('lcdTitle', 'title');
+  setSrc('lcdName', 'name');
+  setSrc('lcdPhoto', 'photo');  // status 가 IN/OUT 이면 in.bmp/out.bmp 가 우선
+}
+
+async function refreshControl() {
+  try {
+    const r = await fetch('/api/state');
+    if (!r.ok) throw new Error('state ' + r.status);
+    const s = await r.json();
+    const badge = $('stateBadge');
+    if (s.status === 'IN') {
+      badge.textContent = '재실 (IN)';
+      badge.className = 'state-badge in';
+    } else if (s.status === 'OUT') {
+      badge.textContent = '부재 (OUT)';
+      badge.className = 'state-badge out';
+    } else {
+      badge.textContent = s.status || '—';
+      badge.className = 'state-badge unknown';
+    }
+    $('lcdState').textContent = s.status || '';
+    $('ctrlDeviceId').textContent = s.device_id ? '(' + s.device_id + ')' : '';
+    await loadLcdImages(s.status);
+  } catch (e) {
+    $('stateBadge').textContent = 'error';
+    $('stateBadge').className = 'state-badge unknown';
+  }
+}
+
+async function postState(payload, label) {
+  try {
+    const r = await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    toast(`${label} 전송 (${j.sent}) — 현재: ${j.current}`);
+    setTimeout(refreshControl, 800);
+  } catch (e) {
+    toast(`${label} 실패: ${e.message}`, true);
+  }
+}
+
+$('lcdPhotoArea').addEventListener('click', () => postState({ action: 'toggle' }, 'TOGGLE'));
+$('btnSetIn').onclick    = () => postState({ status: 'IN' },  'IN');
+$('btnSetOut').onclick   = () => postState({ status: 'OUT' }, 'OUT');
+$('btnToggle').onclick   = () => postState({ action: 'toggle' }, 'TOGGLE');
 
 // ── Status bar (top) ───────────────────────────
 async function fetchStatus() {
@@ -228,10 +306,15 @@ $('autoRefresh').addEventListener('change', e => {
 async function init() {
   bindDragDrop();
   await fetchStatus();
+  await refreshControl();   // 첫 탭 (Control) — LCD 상태 즉시 표시
   await renderImageCards();
   await loadConfig('/api/config', 'deviceConfigText');
   await loadConfig('/api/serverconfig', 'serverConfigText');
   setInterval(fetchStatus, 5000);
+  // Control 탭은 보일 때만 2초마다 polling (MQTT 응답 반영용)
+  setInterval(() => {
+    if ($('page-control').classList.contains('active')) refreshControl();
+  }, 2000);
   // logs 탭은 보이는 시점에만 polling
   autoRefreshTimer = setInterval(() => {
     if ($('page-logs').classList.contains('active')) refreshLogs();

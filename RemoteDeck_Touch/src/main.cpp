@@ -15,11 +15,12 @@
 #include "images/images.h"
 #include "utils/TypeUtils.h"
 // Design Ref: §5.3 Component List — Web Layer (v2 Image Manager)
-// v2.2 Phase 2 — sync WebServer + ImageApi + ConfigApi + Logger
+// v2.2 Phase 2 — sync WebServer + ImageApi + ConfigApi + Logger + ControlApi
 #include "web/WebServer.h"
 #include "web/ImageApi.h"
 #include "web/ConfigApi.h"
 #include "web/Logger.h"
+#include "web/ControlApi.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -46,6 +47,7 @@ TouchWebServer webServer;
 TouchAuth touchAuth;  // 기본 admin/12345
 ImageApi   imageApi;
 ConfigApi  configApi;
+ControlApi controlApi;
 Logger     touchLogger;
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -155,6 +157,7 @@ void setup()
         // 모듈별 라우트 등록 (begin() 이전에 호출 — sync WebServer 는 begin() 후 라우트 추가도 OK)
         imageApi.attach(&webServer, &touchLogger);
         configApi.attach(&webServer, &touchLogger);
+        controlApi.attach(&webServer, &touchLogger);
         touchLogger.attach(&webServer);
 
         webServer.begin(80, &touchAuth);
