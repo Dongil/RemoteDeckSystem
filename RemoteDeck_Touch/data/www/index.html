@@ -13,45 +13,14 @@
 </header>
 
 <nav>
-  <button class="tab active" data-tab="control">Control</button>
-  <button class="tab" data-tab="images">Images</button>
+  <button class="tab active" data-tab="images">Images</button>
   <button class="tab" data-tab="config">Config</button>
   <button class="tab" data-tab="logs">Logs</button>
 </nav>
 
 <main>
-  <!-- CONTROL TAB (LCD 미러링) -->
-  <section class="page active" id="page-control">
-    <div class="card">
-      <h2>단말 상태 (실시간)</h2>
-      <p class="hint">단말 LCD 와 동일한 레이아웃입니다. 가운데 영역을 누르면 재실/부재를 토글합니다 (단말의 재부재 버튼과 동일).</p>
-      <div class="lcd-mirror" id="lcdMirror">
-        <div class="lcd-slot lcd-title">
-          <img id="lcdTitle" alt="title">
-        </div>
-        <div class="lcd-slot lcd-photo" id="lcdPhotoArea" title="클릭하여 재실/부재 토글">
-          <img id="lcdPhoto" alt="photo">
-          <div class="lcd-state" id="lcdState">…</div>
-        </div>
-        <div class="lcd-slot lcd-name">
-          <img id="lcdName" alt="name">
-        </div>
-      </div>
-      <div class="state-row">
-        <span>현재 상태:</span>
-        <span class="state-badge" id="stateBadge">…</span>
-        <span class="device-id" id="ctrlDeviceId"></span>
-      </div>
-      <div class="btn-row">
-        <button id="btnSetIn" class="primary">재실 (IN)</button>
-        <button id="btnSetOut">부재 (OUT)</button>
-        <button id="btnToggle">토글</button>
-      </div>
-    </div>
-  </section>
-
   <!-- IMAGES TAB -->
-  <section class="page" id="page-images">
+  <section class="page active" id="page-images">
     <div class="card">
       <h2>현재 이미지</h2>
       <div class="card-row" id="imageCards"></div>

@@ -8,9 +8,16 @@
 #include <lvgl.h>
 #include <ArduinoJson.h>
 
-// 협력적 yield helper (Design §12.2)
-static inline void yieldToLvgl() {
+// 협력적 yield helper (Design §12.2) — upload 청크 사이 호출
+// LVGL refresh + MQTT keep-alive + 1ms watchdog yield
+extern bool ethernet_conn;
+extern bool wifi_conn;
+extern void mqttEthernet_loop();
+class MQTTHandler; extern MQTTHandler mqttHandler;
+static inline void yieldToCore() {
     lv_timer_handler();
+    if (ethernet_conn) mqttEthernet_loop();
+    delay(1);  // watchdog feed + 다른 task 진행 시간 확보
 }
 
 void ImageApi::attach(TouchWebServer* ws, Logger* logger) {
@@ -200,8 +207,8 @@ void ImageApi::handleUploadChunk() {
                 return;
             }
             _uploadWritten += upload.currentSize;
-            // Design §12.2 협력적 yield — LVGL 갱신 보장
-            yieldToLvgl();
+            // Design §12.2 협력적 yield — LVGL + MQTT 갱신 보장
+            yieldToCore();
             break;
         }
         case UPLOAD_FILE_END: {
