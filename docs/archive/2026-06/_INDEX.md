@@ -7,6 +7,7 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 | Feature | 기간 | Match Rate | Iterations | Archived | 비고 |
 |---------|------|:---:|:---:|----------|------|
 | [RemoteDeck_Touch_v2.1](./RemoteDeck_Touch_v2.1/) | 2026-06-22 (1일) | **68%** | 0 | 2026-06-22 | LAN 스택 통일 완료. WebUI/PNG는 v2.2로 분리 |
+| [RemoteDeck_Touch_v2.2](./RemoteDeck_Touch_v2.2/) | 2026-06-23 (1일) | **49%** | 0 | 2026-06-23 | sync WebServer 가설 폐기. v2.3 esp_http_server 재설계로 분리. 코드는 v2.2-zero 브랜치 보존 |
 
 ## RemoteDeck_Touch_v2.1 요약
 
@@ -34,7 +35,30 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 
 ## 문서 구성
 
-- `RemoteDeck_Touch_v2.1.plan.md` — Plan (요구사항, 스코프, 리스크)
-- `RemoteDeck_Touch_v2.1.design.md` — Design (Option C Pragmatic, C1~C10 commit 분할)
-- `RemoteDeck_Touch_v2.1.analysis.md` — Gap Analysis (Match Rate 68%)
-- `RemoteDeck_Touch_v2.1.report.md` — 통합 완료 보고서
+### RemoteDeck_Touch_v2.1 (성공 + 분리)
+- `RemoteDeck_Touch_v2.1.plan.md` — Plan (LAN 스택 통일 + PNG)
+- `RemoteDeck_Touch_v2.1.design.md` — Design (Option C Pragmatic)
+- `RemoteDeck_Touch_v2.1.analysis.md` — Gap Analysis (68%)
+- `RemoteDeck_Touch_v2.1.report.md` — 통합 보고서
+
+### RemoteDeck_Touch_v2.2 (실패 가설 + 학습 보존)
+- `RemoteDeck_Touch_v2.2.plan.md` — Plan (WebUI 풀세트 + PNG, zero-base)
+- `RemoteDeck_Touch_v2.2.design.md` — Design (Option C sync WebServer)
+- `RemoteDeck_Touch_v2.2.analysis.md` — Gap Analysis (49%, sync 가설 폐기)
+- `RemoteDeck_Touch_v2.2.report.md` — 통합 보고서 + v2.3 인계 사항
+
+## RemoteDeck_Touch_v2.2 핵심 학습
+
+**시도**: ESP32 Arduino 내장 sync WebServer + 협력적 yield 로 W5500+MQTT 환경 WebUI 구현
+**결과**: Phase 1 PoC (단발 `/api/status`) 성공 → Phase 2 풀세트 도달 후 **연속/병렬 요청 처리 본질적 불안정** 발현
+**증상**: `request handler not found` 반복, 이미지 디코드 fail 패턴, Control 탭 추가 시 부팅 hang
+**결정**: 가설 폐기 + v2.1 운영 유지 + v2.3 esp_http_server 재설계 (별도 task + core pinning)
+
+**보존 자산**:
+- `v2.2-zero` 브랜치 (origin push 완료) — sync WebServer 시도 코드 전체
+- 격리 진단 방식 (`#if WEB_SERVER_DISABLED_DEBUG`) — hang 디버깅 방법론
+
+**v2.3 인계**:
+1. WebServer = esp_http_server (ESP-IDF native, 별도 task)
+2. PoC = 풀세트 케이스 시뮬레이션 (단발 검증의 한계 학습)
+3. PNG / OTA / Control 탭 / 시간 UI (v2.1 사용자 보고)
