@@ -16,13 +16,18 @@ bool WebServer::begin(uint16_t port, const TouchAuth* auth) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     // Design Ref: §2.1 — core 0 pinning, LVGL/MQTT (core 1) 와 물리 격리
+    // v2.3-poc-B2: B1 (stack 16K, sockets 3) → httpd_start ESP_ERR_NO_MEM 추정 (47K heap 부족)
+    //   - stack_size 12K  (8K → 12K, 16K 는 alloc fail)
+    //   - sockets    4    (7 → 4, 동시성 부담 ↓ 정도)
+    //   - priority   4    (LVGL/MQTT 와 경합 완화)
     cfg.server_port      = port;
-    cfg.task_priority    = 5;            // Plan SC: FR-01 (별도 task)
-    cfg.stack_size       = 8192;         // upload chunk + JSON 처리 여유
-    cfg.core_id          = 0;            // ★ 핵심: LVGL/MQTT 와 별도 코어
-    cfg.max_open_sockets = 7;            // Design §6.2 — Long polling socket 여유
-    cfg.max_uri_handlers = 16;           // /api/* 14 + / + 여유 1
-    cfg.lru_purge_enable = true;         // socket 부족 시 LRU 정리
+    cfg.task_priority    = 4;
+    cfg.stack_size       = 12288;
+    cfg.core_id          = 0;
+    cfg.max_open_sockets = 4;
+    cfg.max_uri_handlers = 16;
+    cfg.lru_purge_enable = true;
+    cfg.backlog_conn     = 4;
 
     esp_err_t err = httpd_start(&_server, &cfg);
     if (err != ESP_OK) {
