@@ -303,21 +303,16 @@ $('autoRefresh').addEventListener('change', e => {
 });
 
 // ── Init ───────────────────────────────────────
+// v2.2.1: 자동 polling 모두 제거 (sync WebServer 부하 → LVGL/MQTT 멈춤 원인)
+// 사용자 action 또는 F5 새로고침으로만 갱신. autoRefresh 체크박스만 옵트인.
 async function init() {
   bindDragDrop();
   await fetchStatus();
-  await refreshControl();   // 첫 탭 (Control) — LCD 상태 즉시 표시
+  await refreshControl();   // 첫 탭 (Control) — LCD 상태 1회 표시
   await renderImageCards();
   await loadConfig('/api/config', 'deviceConfigText');
   await loadConfig('/api/serverconfig', 'serverConfigText');
-  setInterval(fetchStatus, 5000);
-  // Control 탭은 보일 때만 2초마다 polling (MQTT 응답 반영용)
-  setInterval(() => {
-    if ($('page-control').classList.contains('active')) refreshControl();
-  }, 2000);
-  // logs 탭은 보이는 시점에만 polling
-  autoRefreshTimer = setInterval(() => {
-    if ($('page-logs').classList.contains('active')) refreshLogs();
-  }, 5000);
+  // 자동 polling 제거 — 단말 부하 최소화
+  // logs 탭의 autoRefresh 체크박스 (기본 ON) 만 사용자가 끄거나 켤 수 있음
 }
 init();
