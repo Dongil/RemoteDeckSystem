@@ -39,17 +39,38 @@ void mqttEthernet_init()
         Serial.println("Dhcp IP configuration is used.");
     }
 
-    // 링크 + IP 획득 폴링 (최대 10초) - Design §12.3
-    unsigned long start = millis();
-    while ((ETH.localIP() == IPAddress(0, 0, 0, 0)) && (millis() - start < 10000)) {
-        Serial.print(".");
-        delay(200);
-    }
-    Serial.println();
+    // v2.2 fix: DHCP 타임아웃 15초 + 1회 재시도 (운영 환경 정상화 후 단축, 총 worst-case 30s)
+    auto waitIP = [](unsigned long timeoutMs) -> bool {
+        unsigned long start = millis();
+        while ((ETH.localIP() == IPAddress(0, 0, 0, 0)) && (millis() - start < timeoutMs)) {
+            Serial.print(".");
+            delay(200);
+        }
+        Serial.println();
+        return ETH.localIP() != IPAddress(0, 0, 0, 0);
+    };
 
-    if (ETH.localIP() == IPAddress(0, 0, 0, 0)) {
-        Serial.println("Failed to configure Ethernet.");
-        return;
+    Serial.print("ETH waiting for IP (timeout 15s) ");
+    if (!waitIP(15000)) {
+        Serial.println("ETH: 1st attempt failed, retrying ETH.begin()...");
+        ETH.end();
+        delay(500);
+        if (!ETH.begin(ETH_PHY_W5500, 1, W5500_CS_GPIO, INT_GPIO, -1, SPI)) {
+            Serial.println("ETH.begin() retry failed");
+            return;
+        }
+        if (deviceConfig.networkConfig.usingStatic) {
+            IPAddress staticIP      = stringToIPAddress(deviceConfig.networkConfig.staticIP);
+            IPAddress staticGateway = stringToIPAddress(deviceConfig.networkConfig.staticGateway);
+            IPAddress staticSubnet  = stringToIPAddress(deviceConfig.networkConfig.staticSubnet);
+            IPAddress primaryDNS    = stringToIPAddress(deviceConfig.networkConfig.staticPrimaryDNS);
+            ETH.config(staticIP, staticGateway, staticSubnet, primaryDNS);
+        }
+        Serial.print("ETH retry waiting (timeout 15s) ");
+        if (!waitIP(15000)) {
+            Serial.println("Failed to configure Ethernet (after retry).");
+            return;
+        }
     }
 
     // MAC 주소 저장 - ETH.macAddress() 가 String 반환
