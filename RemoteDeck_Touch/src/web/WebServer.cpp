@@ -1,6 +1,7 @@
-// Design Ref: §4.1, §12.1 — Phase 1 PoC (sync WebServer, /api/status 만 노출)
+// Design Ref: §4.1, §12.1 — sync WebServer (PoC 기반 + Phase 2 정적 파일 + Auth 헬퍼)
 
 #include "WebServer.h"
+#include <SPIFFS.h>
 
 void TouchWebServer::begin(uint16_t port, const TouchAuth* auth) {
     _auth = auth;
@@ -39,20 +40,20 @@ void TouchWebServer::setupRoutes() {
         logEvent("API", "/api/status");
     });
 
-    // 간단한 root - Phase 2 에서 SPIFFS /www/ 정적 서빙으로 교체
-    _server.on("/", HTTP_GET, [this]() {
-        if (!requireAuth()) return;
-        _server.send(200, "text/plain",
-            "RemoteDeck_Touch v2.2 PoC\n"
-            "sync WebServer + W5500 + MQTT 검증 단계\n"
-            "API: GET /api/status (Basic Auth)\n");
-    });
+    // Phase 2: SPIFFS /www/ 정적 파일 — sync WebServer 는 chaining 미지원, 명시적 핸들러
+    auto serveStaticFile = [this](const char* path, const char* spiffsPath, const char* mime) {
+        _server.on(path, HTTP_GET, [this, spiffsPath, mime]() {
+            if (!requireAuth()) return;
+            File f = SPIFFS.open(spiffsPath, "r");
+            if (!f) { _server.send(404, "text/plain", "Not found"); return; }
+            _server.streamFile(f, mime);
+            f.close();
+        });
+    };
+    serveStaticFile("/",          "/www/index.html", "text/html");
+    serveStaticFile("/index.html","/www/index.html", "text/html");
+    serveStaticFile("/style.css", "/www/style.css",  "text/css");
+    serveStaticFile("/app.js",    "/www/app.js",     "application/javascript");
 
-    _server.onNotFound([this]() {
-        if (_server.uri().startsWith("/api/")) {
-            _server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
-        } else {
-            _server.send(404, "text/plain", "Not found");
-        }
-    });
+    // 404 fallback — ImageApi 가 onNotFound 등록하므로 여기는 미설정
 }

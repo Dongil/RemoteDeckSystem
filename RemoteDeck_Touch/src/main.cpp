@@ -15,7 +15,11 @@
 #include "images/images.h"
 #include "utils/TypeUtils.h"
 // Design Ref: §5.3 Component List — Web Layer (v2 Image Manager)
-#include "web/WebServer.h"  // v2.2 sync TouchWebServer (ImageApi 는 Phase 2 에서 재작성)
+// v2.2 Phase 2 — sync WebServer + ImageApi + ConfigApi + Logger
+#include "web/WebServer.h"
+#include "web/ImageApi.h"
+#include "web/ConfigApi.h"
+#include "web/Logger.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -37,9 +41,12 @@ String httpUrl = "";
 uint16_t httpPort = 0;
 
 // v2 Web UI - Plan SC: FR-01, FR-02, FR-03
-// v2.2 PoC: sync TouchWebServer (Arduino 내장 WebServer 기반)
+// v2.2 Phase 2: sync TouchWebServer + 모듈
 TouchWebServer webServer;
-TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
+TouchAuth touchAuth;  // 기본 admin/12345
+ImageApi   imageApi;
+ConfigApi  configApi;
+Logger     touchLogger;
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
 
@@ -122,28 +129,38 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // v2.2 PoC: sync WebServer 활성화 (별도 task 없음, handleClient() 는 loop() 에서 호출)
-    // Design Ref: §2.0 Option C, §12.1 PoC
+    // v2.2 Phase 2: sync WebServer + ImageApi + ConfigApi + Logger 등록
+    // Design Ref: §2.0 Option C
     if (ethernet_conn || wifi_conn) {
         webServer.setStatusGetter([]() -> String {
-            char buf[256];
+            char buf[320];
             const char* iface = ethernet_conn ? "ethernet" : (wifi_conn ? "wifi" : "none");
             IPAddress ip = ethernet_conn ? ETH.localIP() : WiFi.localIP();
             snprintf(buf, sizeof(buf),
-                "{\"ok\":true,\"poc\":true,\"uptime_sec\":%u,\"heap_free\":%u,\"heap_min\":%u,"
-                "\"network\":{\"iface\":\"%s\",\"ip\":\"%s\"},\"fw\":\"v2.2-poc\"}",
+                "{\"ok\":true,\"uptime_sec\":%u,\"heap_free\":%u,\"heap_min\":%u,"
+                "\"spiffs_used\":%u,\"spiffs_total\":%u,"
+                "\"network\":{\"iface\":\"%s\",\"ip\":\"%s\"},\"fw\":\"v2.2.0\"}",
                 (unsigned)(millis() / 1000),
                 (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getMinFreeHeap(),
+                (unsigned)SPIFFS.usedBytes(),
+                (unsigned)SPIFFS.totalBytes(),
                 iface, ip.toString().c_str());
             return String(buf);
         });
         webServer.setLogger([](const char* event, const char* detail) {
             Serial.printf("[Web %s] %s\n", event, detail);
+            touchLogger.add(event, detail);
         });
+        // 모듈별 라우트 등록 (begin() 이전에 호출 — sync WebServer 는 begin() 후 라우트 추가도 OK)
+        imageApi.attach(&webServer, &touchLogger);
+        configApi.attach(&webServer, &touchLogger);
+        touchLogger.attach(&webServer);
+
         webServer.begin(80, &touchAuth);
+        touchLogger.add("BOOT", "v2.2 web up");
         IPAddress ip = ethernet_conn ? ETH.localIP() : WiFi.localIP();
-        Serial.printf("Web UI (PoC): http://%s/api/status (admin:12345)\n", ip.toString().c_str());
+        Serial.printf("Web UI: http://%s/ (admin:12345)\n", ip.toString().c_str());
     } else {
         Serial.println("Web UI skipped: no network");
     }
@@ -163,9 +180,9 @@ void loop()
     delay(10);
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
-    // v2.2 PoC: sync WebServer handleClient() — main loop 에서 직접 호출 (별도 task 없음)
-    // 협력적 yield 는 Phase 2 업로드 핸들러에서 적용 예정
+    // v2.2: sync WebServer handleClient() + ImageApi pending reload
     webServer.handleClient();
+    imageApi.loop();
 
     // Mqtt 사용시
     if(ethernet_conn){

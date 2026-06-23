@@ -1,10 +1,17 @@
-/* RemoteDeck_Touch web UI - PC 디자인 토큰 재사용 */
+/* RemoteDeck_Touch v2.2 — PC v2.3.0 디자인 토큰 재사용 */
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;font-size:14px;min-height:100vh}
 header{background:#16213e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 header h1{font-size:18px;color:#0ff;font-weight:bold}
 header span{font-size:12px;color:#888;font-family:monospace}
+
+nav{display:flex;background:#0f3460;overflow-x:auto}
+.tab{flex:1;padding:10px;background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;white-space:nowrap}
+.tab.active{color:#0ff;border-bottom:2px solid #0ff;font-weight:bold}
+
 main{padding:12px;max-width:900px;margin:0 auto}
+.page{display:none}
+.page.active{display:block}
 
 .card{background:#16213e;border-radius:8px;padding:16px;margin-bottom:12px}
 .card h2{font-size:14px;color:#0ff;margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:6px}
@@ -29,10 +36,23 @@ main{padding:12px;max-width:900px;margin:0 auto}
 .progress-bar{background:#0a0e27;border-radius:4px;height:20px;margin:10px 0;overflow:hidden;border:1px solid #2a3050}
 .progress-fill{background:linear-gradient(90deg,#0ff,#0a8);height:100%;width:0%;transition:width .3s;color:#000;text-align:center;font-size:12px;font-weight:bold;line-height:20px}
 
-.log-container{max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px}
-.log-entry{padding:4px 0;border-bottom:1px solid #222}
-.log-entry .time{color:#888;margin-right:8px}
-.log-entry .event{color:#0ff;margin-right:8px}
+textarea{width:100%;background:#0a0e27;border:1px solid #2a3050;color:#e0e0e0;font-family:'Consolas','Monaco',monospace;font-size:12px;padding:8px;border-radius:4px;resize:vertical}
+textarea:focus{outline:none;border-color:#0ff}
+
+.btn-row{display:flex;gap:8px;margin:10px 0 0;flex-wrap:wrap}
+.btn-row button{padding:6px 14px;background:#0f3460;border:1px solid #0ff;color:#0ff;border-radius:4px;cursor:pointer;font-size:13px}
+.btn-row button:hover{background:#1a5276}
+.btn-row button.primary{background:#0a8;border-color:#0a8;color:#000;font-weight:bold}
+.btn-row button.primary:hover{background:#0c0}
+.btn-row button.danger{background:#3a1a1a;border-color:#f44;color:#f44}
+.btn-row button.danger:hover{background:#5a2a2a;color:#fff}
+.auto-refresh{font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;margin-left:auto}
+
+.log-container{max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px;background:#0a0e27;border-radius:4px;padding:8px}
+.log-entry{padding:4px 8px;border-bottom:1px solid #1a1a3e}
+.log-entry:last-child{border-bottom:none}
+.log-entry .ts{color:#666;margin-right:8px}
+.log-entry .event{color:#0ff;margin-right:8px;font-weight:bold}
 .log-entry.ok .event{color:#0f0}
 .log-entry.fail .event{color:#f44}
 
