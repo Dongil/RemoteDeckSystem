@@ -14,9 +14,11 @@
 #include "mqtt/ethernet_mqtt.h"
 #include "images/images.h"
 #include "utils/TypeUtils.h"
-// Design Ref: §5.3 Component List — Web Layer (v2 Image Manager)
+// Design Ref: §5.3 Component List — Web Layer (v2.3 module-webui)
 #include "web/WebServer.h"
 #include "web/ImageApi.h"
+#include "web/ConfigApi.h"
+#include "web/Logger.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -37,9 +39,11 @@ PubSubClient mqttEthernet_Client(ethClient);
 String httpUrl = "";
 uint16_t httpPort = 0;
 
-// v2 Web UI - Plan SC: FR-01, FR-02, FR-03
+// v2 Web UI - Plan SC: FR-01, FR-02, FR-03, FR-04
 WebServer webServer;
 ImageApi  imageApi;
+ConfigApi configApi;
+Logger    webLogger;
 TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -123,23 +127,26 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // v2.3-httpd module-poc: esp_http_server (ESP-IDF native) 활성화
-    // Design Ref: §2.1 — core 0 별도 task, LVGL/MQTT (core 1) 와 물리 격리
-    // Plan SC: FR-01, FR-02 (PoC gate), FR-08 (Basic Auth)
-    // ImageApi.attach() 는 module-webui 단계에서 — module-poc 는 /api/status 만.
+    // v2.3-httpd module-webui: esp_http_server + 풀세트 API
+    // Design Ref: §2.1, §4 — core 0 별도 task, LVGL/MQTT (core 1) 와 격리
+    // Plan SC: FR-01, FR-03, FR-04, FR-08
     {
         IPAddress ip = ETH.localIP();
         imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.3.0-poc", "2026-06-23");
+        imageApi.setFirmwareInfo("2.3.0-webui", "2026-06-23");
     }
-    webServer.setStatusGetter([]() {
-        // Plan SC: FR-02 — PoC 시나리오에서 1초 응답
-        return imageApi.buildStatusJson();
-    });
+    // 콜백 attach — ImageApi 가 status/list/upload/delete 콜백 등록
+    imageApi.attach(&webServer);
+    // ConfigApi: deviceconfig GET/POST + imagesconfig GET + reboot
+    configApi.attach(&webServer);
+    // Logger: setLogger (write) + LogJsonGetter (read)
+    webLogger.attach(&webServer);
+
     if (webServer.begin(80, &touchAuth)) {
-        Serial.println("WebServer (esp_http_server) started on port 80");
+        webLogger.log("BOOT", "WebServer started on port 80");
+        Serial.println("WebServer (esp_http_server) started — 11 endpoints active");
     } else {
-        Serial.println("WebServer start FAILED — PoC gate fail, check serial");
+        Serial.println("WebServer start FAILED");
     }
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
@@ -159,6 +166,8 @@ void loop()
 
     // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
     imageApi.loop();
+    // v2.3 module-webui: /api/reboot 요청 시 1초 grace 후 ESP.restart()
+    configApi.loop();
 
     // Mqtt 사용시
     if(ethernet_conn){

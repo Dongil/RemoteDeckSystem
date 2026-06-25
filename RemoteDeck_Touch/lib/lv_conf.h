@@ -632,7 +632,10 @@
 #endif
 
 /*PNG decoder library*/
-// TODO(v2): lv_png_init() + LVGL FS driver 등록 방식으로 전환 후 1로 변경
+/* v2.3 module-webui: LV_USE_PNG=1 시도 → lodepng undefined references (LVGL extra/libs/png 자동 컴파일 안 됨)
+ * + DRAM overflow (BSS 24 byte 초과) 동반 발생. PNG 는 별도 sub-task 로 분리:
+ *   - LVGL src/extra/libs/png/lodepng.c 를 PIO 빌드에 명시 포함 + LV_PNG_USE_LV_FILESYSTEM 설정 검토
+ * module-webui 잔여 기능 (WebUI 3탭, /api/* 13개) 검증 우선. */
 #define LV_USE_PNG 0
 
 /*BMP decoder library*/

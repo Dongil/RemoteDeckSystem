@@ -1,10 +1,18 @@
-/* RemoteDeck_Touch web UI - PC 디자인 토큰 재사용 */
+/* RemoteDeck_Touch web UI · PC 디자인 토큰 + tab 추가 */
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;font-size:14px;min-height:100vh}
 header{background:#16213e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 header h1{font-size:18px;color:#0ff;font-weight:bold}
 header span{font-size:12px;color:#888;font-family:monospace}
+
+nav.tabs{background:#0f1830;padding:0 12px;display:flex;gap:2px;border-bottom:1px solid #2a3050}
+.tab{background:transparent;border:none;color:#888;padding:12px 18px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;transition:all .15s}
+.tab:hover{color:#0ff}
+.tab.active{color:#0ff;border-bottom-color:#0ff}
+
 main{padding:12px;max-width:900px;margin:0 auto}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
 
 .card{background:#16213e;border-radius:8px;padding:16px;margin-bottom:12px}
 .card h2{font-size:14px;color:#0ff;margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:6px}
@@ -29,10 +37,24 @@ main{padding:12px;max-width:900px;margin:0 auto}
 .progress-bar{background:#0a0e27;border-radius:4px;height:20px;margin:10px 0;overflow:hidden;border:1px solid #2a3050}
 .progress-fill{background:linear-gradient(90deg,#0ff,#0a8);height:100%;width:0%;transition:width .3s;color:#000;text-align:center;font-size:12px;font-weight:bold;line-height:20px}
 
-.log-container{max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px}
+/* Config tab */
+.config-editor{width:100%;background:#0a0e27;color:#e0e0e0;border:1px solid #2a3050;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;line-height:1.4;resize:vertical;min-height:280px}
+.config-view{background:#0a0e27;color:#bbb;border:1px solid #2a3050;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:280px;overflow:auto}
+.btn-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.btn-row button{padding:8px 16px;background:#0f3460;border:1px solid #0ff;color:#0ff;border-radius:4px;cursor:pointer;font-size:12px}
+.btn-row button:hover{background:#1a5276}
+.btn-row button.primary{background:#0ff;color:#000}
+.btn-row button.primary:hover{background:#0dd}
+.btn-row button.danger{border-color:#f44;color:#f44;background:transparent}
+.btn-row button.danger:hover{background:#3a1a1a}
+.btn-row .toggle{color:#aaa;font-size:12px;display:flex;align-items:center;gap:6px;margin-left:auto}
+.hint{margin-top:8px;color:#777;font-size:11px}
+
+/* Logs tab */
+.log-container{max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px;background:#0a0e27;border:1px solid #2a3050;border-radius:4px;padding:8px;margin-top:8px}
 .log-entry{padding:4px 0;border-bottom:1px solid #222}
 .log-entry .time{color:#888;margin-right:8px}
-.log-entry .event{color:#0ff;margin-right:8px}
+.log-entry .event{color:#0ff;margin-right:8px;font-weight:bold}
 .log-entry.ok .event{color:#0f0}
 .log-entry.fail .event{color:#f44}
 
