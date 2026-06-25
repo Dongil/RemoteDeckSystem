@@ -165,9 +165,14 @@ bool read_bmp_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
 }
 
 #if LV_USE_PNG
-// lv_conf.h 에서 LV_USE_PNG=1 설정 시 lvgl/extra/libs/png/lodepng 사용 가능
-// lodepng.h 는 자체적으로 namespace lodepng + C linkage 처리하므로 extern "C" 래핑 금지
-#include "extra/libs/png/lodepng.h"
+// lv_conf.h 에서 LV_USE_PNG=1 설정 시 lvgl/extra/libs/png/lodepng 사용
+// lodepng.h 가 namespace lodepng + LODEPNG_COMPILE_CPP 가지므로 헤더 전체 extern "C" 불가.
+// 사용하는 C 함수 2개만 명시 extern "C" 선언 — lodepng.c 의 C linkage 와 정합.
+extern "C" {
+    unsigned    lodepng_decode32(unsigned char** out, unsigned* w, unsigned* h,
+                                 const unsigned char* in, size_t insize);
+    const char* lodepng_error_text(unsigned code);
+}
 
 bool read_png_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
     File f = SPIFFS.open(filepath, "r");
