@@ -163,6 +163,7 @@ void WebServer::registerHandlers() {
     reg("/api/config",       HTTP_POST,   &WebServer::trampolineConfigPost);
     reg("/api/log",          HTTP_GET,    &WebServer::trampolineLog);
     reg("/api/reboot",       HTTP_POST,   &WebServer::trampolineReboot);
+    reg("/api/ota",          HTTP_POST,   &WebServer::trampolineOtaUpload);
 }
 
 // --- Trampolines (boilerplate) ---
@@ -183,6 +184,7 @@ TRAMP(trampolineConfigGet,    handleConfigGet)
 TRAMP(trampolineConfigPost,   handleConfigPost)
 TRAMP(trampolineLog,          handleLog)
 TRAMP(trampolineReboot,       handleReboot)
+TRAMP(trampolineOtaUpload,    handleOtaUpload)
 #undef TRAMP
 
 // --- Static handlers (PROGMEM embed — SPIFFS 미사용) ---
@@ -500,6 +502,149 @@ esp_err_t WebServer::handleImagesUpload(httpd_req_t* req) {
     } else {
         logEvent("IMG_UPLOAD", "fail");
         sendJson(req, 500, "{\"ok\":false,\"error\":\"upload_failed\"}");
+    }
+    return ESP_OK;
+}
+
+// --- OTA upload (Update.h 기반) ---
+// handleImagesUpload 의 binary-safe multipart parser 동일 패턴.
+// 차이: file 저장 대신 _otaStart / _otaChunk 콜백 (OtaApi → Update.write/end) 사용.
+esp_err_t WebServer::handleOtaUpload(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (!_otaStart || !_otaChunk) {
+        sendJson(req, 500, "{\"ok\":false,\"error\":\"no_handler\"}");
+        return ESP_OK;
+    }
+
+    char ct[256];
+    if (httpd_req_get_hdr_value_str(req, "Content-Type", ct, sizeof(ct)) != ESP_OK) {
+        sendJson(req, 400, "{\"ok\":false,\"error\":\"no_content_type\"}");
+        return ESP_OK;
+    }
+    char* bptr = strstr(ct, "boundary=");
+    if (!bptr) {
+        sendJson(req, 400, "{\"ok\":false,\"error\":\"no_boundary\"}");
+        return ESP_OK;
+    }
+    String boundary = String("--") + (bptr + 9);
+    String boundaryNl = String("\r\n") + boundary;
+    size_t bndLen   = boundary.length();
+    size_t bndNlLen = boundaryNl.length();
+    const uint8_t* bndNlBytes = (const uint8_t*)boundaryNl.c_str();
+
+    enum { ST_PREAMBLE, ST_HEADER, ST_BODY, ST_DONE } st = ST_PREAMBLE;
+    String headerBuf;
+    String filename;
+    bool started = false;
+    bool ok = true;
+    size_t totalContent = req->content_len;
+    size_t consumed = 0;
+
+    const size_t TAIL_CAP = 256;
+    uint8_t* tailBuf = (uint8_t*)malloc(TAIL_CAP);
+    size_t tailLen = 0;
+    const size_t RECV_BUF = 4096;  // OTA 는 큰 chunk 권장
+    uint8_t* rbuf = (uint8_t*)malloc(RECV_BUF);
+    if (!rbuf || !tailBuf) {
+        if (rbuf) free(rbuf);
+        if (tailBuf) free(tailBuf);
+        sendJson(req, 500, "{\"ok\":false,\"error\":\"alloc_fail\"}");
+        return ESP_OK;
+    }
+    if (bndNlLen + 4 > TAIL_CAP) {
+        free(rbuf); free(tailBuf);
+        sendJson(req, 400, "{\"ok\":false,\"error\":\"boundary_too_long\"}");
+        return ESP_OK;
+    }
+
+    // OTA payload 크기 = totalContent - multipart overhead. 정확히 알기 어려우니
+    // _otaStart 는 totalContent 로 호출 (Update.begin 의 size 인자는 약간 over 일 수 있어도
+    // Update.h 가 실제 write 양만큼 처리하므로 무방).
+    while (consumed < totalContent && st != ST_DONE) {
+        size_t want = totalContent - consumed;
+        if (want > RECV_BUF) want = RECV_BUF;
+        int r = httpd_req_recv(req, (char*)rbuf, want);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            ok = false; break;
+        }
+        consumed += r;
+
+        size_t off = 0;
+        while (off < (size_t)r && st != ST_DONE) {
+            if (st == ST_PREAMBLE) {
+                headerBuf += (char)rbuf[off]; off++;
+                int idx = headerBuf.indexOf(boundary);
+                if (idx >= 0) {
+                    int afterB = idx + bndLen;
+                    if (headerBuf.length() >= (unsigned)(afterB + 2)) {
+                        headerBuf = headerBuf.substring(afterB + 2);
+                        st = ST_HEADER;
+                    }
+                }
+            } else if (st == ST_HEADER) {
+                headerBuf += (char)rbuf[off]; off++;
+                int blank = headerBuf.indexOf("\r\n\r\n");
+                if (blank >= 0) {
+                    String hdrs = headerBuf.substring(0, blank);
+                    int fnPos = hdrs.indexOf("filename=\"");
+                    if (fnPos >= 0) {
+                        int end = hdrs.indexOf("\"", fnPos + 10);
+                        if (end > fnPos) filename = hdrs.substring(fnPos + 10, end);
+                    }
+                    headerBuf = "";
+                    st = ST_BODY;
+                    if (!_otaStart(totalContent)) {
+                        ok = false; st = ST_DONE; break;
+                    }
+                    started = true;
+                }
+            } else if (st == ST_BODY) {
+                size_t avail = (size_t)r - off;
+                while (avail > 0) {
+                    size_t room = TAIL_CAP - tailLen;
+                    size_t take = avail < room ? avail : room;
+                    memcpy(tailBuf + tailLen, rbuf + off, take);
+                    tailLen += take;
+                    off += take;
+                    avail -= take;
+
+                    int bIdx = memfind(tailBuf, tailLen, bndNlBytes, bndNlLen);
+                    if (bIdx >= 0) {
+                        if (bIdx > 0) {
+                            if (!_otaChunk(tailBuf, bIdx, false)) { ok = false; }
+                        }
+                        _otaChunk(nullptr, 0, true);
+                        st = ST_DONE;
+                        break;
+                    }
+                    if (tailLen > bndNlLen + 4) {
+                        size_t flush = tailLen - bndNlLen - 4;
+                        if (!_otaChunk(tailBuf, flush, false)) { ok = false; st = ST_DONE; break; }
+                        memmove(tailBuf, tailBuf + flush, tailLen - flush);
+                        tailLen -= flush;
+                    }
+                }
+            }
+        }
+    }
+
+    if (st != ST_DONE && started) {
+        if (tailLen > 0) _otaChunk(tailBuf, tailLen, true);
+        else _otaChunk(nullptr, 0, true);
+    }
+
+    free(rbuf);
+    free(tailBuf);
+
+    if (started && ok) {
+        char d[140];
+        snprintf(d, sizeof(d), "%s (%u bytes) — reboot", filename.c_str(), (unsigned)totalContent);
+        logEvent("OTA", d);
+        sendJson(req, 200, "{\"ok\":true,\"reboot\":true}");
+    } else {
+        logEvent("OTA", "fail");
+        sendJson(req, 500, "{\"ok\":false,\"error\":\"ota_failed\"}");
     }
     return ESP_OK;
 }

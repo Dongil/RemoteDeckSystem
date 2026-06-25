@@ -19,6 +19,7 @@
 #include "web/ImageApi.h"
 #include "web/ConfigApi.h"
 #include "web/Logger.h"
+#include "web/OtaApi.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -44,6 +45,7 @@ WebServer webServer;
 ImageApi  imageApi;
 ConfigApi configApi;
 Logger    webLogger;
+OtaApi    otaApi;
 TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -133,18 +135,17 @@ void setup()
     {
         IPAddress ip = ETH.localIP();
         imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.3.0-webui", "2026-06-23");
+        imageApi.setFirmwareInfo("2.3.0-ota", "2026-06-25");
     }
-    // 콜백 attach — ImageApi 가 status/list/upload/delete 콜백 등록
+    // 콜백 attach
     imageApi.attach(&webServer);
-    // ConfigApi: deviceconfig GET/POST + imagesconfig GET + reboot
     configApi.attach(&webServer);
-    // Logger: setLogger (write) + LogJsonGetter (read)
     webLogger.attach(&webServer);
+    otaApi.attach(&webServer);  // /api/ota: setOtaStarter + setOtaChunk
 
     if (webServer.begin(80, &touchAuth)) {
         webLogger.log("BOOT", "WebServer started on port 80");
-        Serial.println("WebServer (esp_http_server) started — 11 endpoints active");
+        Serial.println("WebServer started — 12 endpoints active (incl. /api/ota)");
     } else {
         Serial.println("WebServer start FAILED");
     }
@@ -168,6 +169,8 @@ void loop()
     imageApi.loop();
     // v2.3 module-webui: /api/reboot 요청 시 1초 grace 후 ESP.restart()
     configApi.loop();
+    // v2.3 module-ota: Update.end 성공 후 1초 grace 후 신 펌웨어로 reboot
+    otaApi.loop();
 
     // Mqtt 사용시
     if(ethernet_conn){

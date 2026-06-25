@@ -33,6 +33,9 @@ public:
     using DeviceConfigSetter   = std::function<bool(const String& body, String& errOut)>;
     using LogJsonGetter        = std::function<String()>;
     using RebootHandler        = std::function<void()>;
+    // v2.3 module-ota 시그니처 — Image upload 와 동일 패턴 (start + chunk)
+    using OtaStarter           = std::function<bool(size_t total)>;
+    using OtaChunk             = std::function<bool(uint8_t* data, size_t len, bool isFinal)>;
 
     void setStatusGetter(StatusGetter cb)               { _getStatus       = cb; }
     void setImagesListGetter(ImagesListGetter cb)       { _getImagesList   = cb; }
@@ -45,6 +48,8 @@ public:
     void setDeviceConfigSetter(DeviceConfigSetter cb)   { _setDeviceConfig = cb; }
     void setLogJsonGetter(LogJsonGetter cb)             { _getLogJson      = cb; }
     void setRebootHandler(RebootHandler cb)             { _onReboot        = cb; }
+    void setOtaStarter(OtaStarter cb)                   { _otaStart        = cb; }
+    void setOtaChunk(OtaChunk cb)                       { _otaChunk        = cb; }
 
     httpd_handle_t handle() const { return _server; }
 
@@ -63,6 +68,8 @@ private:
     DeviceConfigSetter   _setDeviceConfig = nullptr;
     LogJsonGetter        _getLogJson      = nullptr;
     RebootHandler        _onReboot        = nullptr;
+    OtaStarter           _otaStart        = nullptr;
+    OtaChunk             _otaChunk        = nullptr;
 
     // 공통 유틸
     bool requireAuth(httpd_req_t* req);
@@ -92,6 +99,7 @@ private:
     static esp_err_t trampolineConfigPost(httpd_req_t* req);
     static esp_err_t trampolineLog(httpd_req_t* req);
     static esp_err_t trampolineReboot(httpd_req_t* req);
+    static esp_err_t trampolineOtaUpload(httpd_req_t* req);
 
     // 실제 핸들러
     esp_err_t handleRoot(httpd_req_t* req);
@@ -107,6 +115,7 @@ private:
     esp_err_t handleConfigPost(httpd_req_t* req);
     esp_err_t handleLog(httpd_req_t* req);
     esp_err_t handleReboot(httpd_req_t* req);
+    esp_err_t handleOtaUpload(httpd_req_t* req);
 
     // Multipart upload helper (state machine within single req scope)
     esp_err_t streamMultipartToCallback(httpd_req_t* req, const String& boundary);

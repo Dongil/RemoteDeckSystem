@@ -53,6 +53,16 @@
       <h2>Images Config (read-only)</h2>
       <pre id="imagesConfigView" class="config-view">loading...</pre>
     </div>
+    <div class="card">
+      <h2>OTA 펌웨어 업데이트</h2>
+      <p class="hint">PIO 빌드의 OTA bin (firmware.bin, 1.7MB 내외) 선택. 업로드 완료 후 자동 재부팅.</p>
+      <input type="file" id="otaFile" accept=".bin">
+      <button id="otaUpload" class="primary">OTA 업로드</button>
+      <div class="progress-bar" id="otaProgress" hidden>
+        <div class="progress-fill" id="otaFill">0%</div>
+      </div>
+      <div id="otaMsg" class="hint"></div>
+    </div>
   </section>
 
   <!-- Logs Tab -->

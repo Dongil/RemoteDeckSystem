@@ -202,6 +202,50 @@ async function saveConfig() {
   }
 }
 
+async function uploadOta() {
+  const f = $('otaFile').files[0];
+  if (!f) { toast('OTA bin 파일을 선택하세요', true); return; }
+  if (!f.name.toLowerCase().endsWith('.bin')) {
+    toast('.bin 파일만 업로드 가능', true); return;
+  }
+  if (f.size > 1900 * 1024) {
+    toast(`파일 크기 초과: ${(f.size/1024).toFixed(0)}KB (최대 ~1.85MB)`, true); return;
+  }
+  if (!confirm(`${f.name} (${(f.size/1024).toFixed(0)}KB) 업로드 후 자동 재부팅됩니다. 진행하시겠습니까?`)) return;
+
+  const fd = new FormData();
+  fd.append('file', f);
+  const bar = $('otaProgress'), fill = $('otaFill'), msg = $('otaMsg');
+  bar.hidden = false; fill.style.width = '0%'; fill.textContent = '0%';
+  msg.textContent = '업로드 중...';
+
+  try {
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/ota');
+      xhr.timeout = 120000;  // OTA 는 시간 걸림
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          const p = Math.round(e.loaded * 100 / e.total);
+          fill.style.width = p + '%'; fill.textContent = p + '%';
+        }
+      };
+      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('HTTP ' + xhr.status));
+      xhr.onerror = () => reject(new Error('network'));
+      xhr.ontimeout = () => reject(new Error('timeout'));
+      xhr.send(fd);
+    });
+    msg.textContent = '✅ 업로드 완료 — 단말 재부팅 중 (~20초 대기)';
+    toast('OTA 성공 — 재부팅 중');
+  } catch (e) {
+    // 단말이 OTA 성공 후 응답 send 도중 reboot → connection drop = network/timeout.
+    // 단순 fail 보다는 reboot 가능성 안내 (사용자가 새로고침으로 확인).
+    msg.textContent = '⚠ 응답 끊김 (' + e.message + ') — 단말 reboot 중일 수 있음. 30초 대기 후 새로고침';
+    toast('연결 끊김 — 단말 reboot 가능성, 30초 대기 후 확인', false, 5000);
+    setTimeout(() => { window.location.reload(); }, 30000);
+  }
+}
+
 async function rebootDevice() {
   if (!confirm('지금 재부팅하시겠습니까? 약 15-30초 후 다시 접속 가능합니다.')) return;
   try {
@@ -253,6 +297,7 @@ async function init() {
   $('cfgReload').addEventListener('click', loadConfig);
   $('cfgSave').addEventListener('click', saveConfig);
   $('cfgReboot').addEventListener('click', rebootDevice);
+  $('otaUpload').addEventListener('click', uploadOta);
   // log buttons
   $('logRefresh').addEventListener('click', refreshLog);
   $('logAuto').addEventListener('change', toggleLogAuto);
