@@ -632,10 +632,14 @@
 #endif
 
 /*PNG decoder library*/
-/* v2.3 PNG sub-task: Logger 30건 shrink (4KB BSS 절약) 후 재시도.
- * lodepng.h 가 lvgl.h include 함 → LV_USE_PNG 정의가 lodepng.c 까지 전파 (검증 완료).
- * images.cpp 의 read_png_from_spiffs 가 #if LV_USE_PNG 분기로 lodepng_decode32 호출. */
-#define LV_USE_PNG 1
+/* v2.3 PNG sub-task: 활성 시도 후 LCD touch race 발현 → 안전 위해 비활성 유지.
+ * - 작은 PNG (32x32) round-trip OK
+ * - 큰 PNG (240x86) heap OOM 우려 → IHDR check 로 skip 가능
+ * - BUT decode 시도 자체가 LVGL indev (touch) state 손상 의심
+ *   (main loop 의 imageApi.loop → images_update → try_set 도중 lv_timer_handler 끊김)
+ * 별도 작업: LVGL 의 lv_png_init() 활용 + LVGL native decoder chain 사용, 또는
+ *           PNG decode 를 별도 task 로 분리 (LVGL state 격리). */
+#define LV_USE_PNG 0
 
 /*BMP decoder library*/
 #define LV_USE_BMP 1
