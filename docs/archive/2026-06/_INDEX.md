@@ -9,6 +9,7 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 | [RemoteDeck_Touch_v2.1](./RemoteDeck_Touch_v2.1/) | 2026-06-22 (1일) | **68%** | 0 | 2026-06-22 | LAN 스택 통일 완료. WebUI/PNG는 v2.2로 분리 |
 | [RemoteDeck_Touch_v2.2](./RemoteDeck_Touch_v2.2/) | 2026-06-23 (1일) | **49%** | 0 | 2026-06-23 | sync WebServer 가설 폐기. v2.3 esp_http_server 재설계로 분리. 코드는 v2.2-zero 브랜치 보존 |
 | [RemoteDeck_Touch_v2.3](./RemoteDeck_Touch_v2.3/) | 2026-06-23 ~ 2026-06-26 (4일) | **86.4%** | 0 | 2026-06-26 | esp_http_server 5 모듈 완성. SPI 버스 공유 충돌로 WebUI/PNG/OTA 비활성. 핵심 API+Control 운영. 코드는 v2.3-httpd 브랜치 보존 |
+| [RemoteDeck_Touch_v2.4](./RemoteDeck_Touch_v2.4/) | 2026-06-26 (1일) | **12.1%** | 0 | 2026-06-26 | 시간 분할 (Web active + LCD freeze) 가설 폐기. ESP32 SPI host mutex wait 한계. v2.5 분기 (freq 조정 / H/W rewire / 보드 변경 / WebUI 영구 포기). 코드는 v2.4-spi 브랜치 보존 |
 
 ## RemoteDeck_Touch_v2.1 요약
 
@@ -90,3 +91,40 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 3. PNG decoder 재활성 + LCD touch 검증
 4. OTA partition 변경 (huge_app.csv → min_spiffs.csv 또는 custom)
 5. NFR 정정 (heap baseline 100KB → 40KB)
+
+## RemoteDeck_Touch_v2.4 핵심 학습
+
+**시도**: 시간 분할 (Web active mode + LCD freeze) — WebUI 활성 시 LVGL/TFT 정지 → ETH 가 SPI 단독 점유 (사용자 통찰)
+
+**구현**: WebActivityMonitor (단일 책임) + deferred 콜백 (core 0→1 sync) + freezeLCD/resumeLCD + 10초 idle + LCD touch tap-to-acquire
+
+**결과**: PoC P1 (단일 GET /) **부터 fail**
+- 응답 size=0, 6초 timeout
+- 단말 alive (uptime monotonic, heap 안정) — esp_http_server task hang
+- deferred 콜백 도입 후에도 race 해소 안 됨
+
+**Match Rate 12.1%** — PoC gate fail 로 후속 module-png/ota 진입 안 함
+
+**본질 진단 (재정밀화)**:
+- ESP32 의 SPI host driver 가 host-level mutex 제공 — 그러나 **transaction wait 시간 무제한**
+- ETH 응답 send (수십 KB) + TFT freezeLCD (fillScreen + drawString) 동시 시도 시 mutex 누적 wait
+- mutex wait 시간이 client (curl 6초) timeout 초과
+- 시간 분할이 race window 만 줄임 — mutex contention 자체 해결 안 됨
+
+**보존 자산**:
+- `v2.4-spi` 브랜치 (origin push 완료) — 시간 분할 시도 코드 전체
+- WebActivityMonitor.{h,cpp} (단일 책임 깔끔, v2.5 SPI fix 와 조합 가능)
+- v24_poc.py (brower 6 동시 + 22KB inline + sustained + MQTT 시나리오, 재사용 가능)
+- deferred 콜백 패턴 (core 0→1 sync, v2.5 SPI mutex 도입 시 함께 사용)
+- freezeLCD/resumeLCD/poll_touch_for_resume 정적 함수
+
+**v2.5 인계 (5개 옵션)**:
+| Option | 설명 | 권장도 |
+|--------|------|:---:|
+| A. SPI freq 조정 | TFT 27→10MHz + W5500 8MHz | 중간 |
+| B. SPI 명시적 mutex | `spi_device_acquire_bus` ESP-IDF API | 중간 |
+| C. H/W rewire | TFT 핀 → HSPI (SCK=14, MOSI=13, MISO=12) | 높음 |
+| D. ESP32-WROVER (PSRAM 보드 교체) | dual SPI host 자연 분리 | 높음 |
+| **E. WebUI 영구 포기** | v2.3-final minimal 운영 (API only) | **가장 빠름** |
+
+**단말 상태**: v2.3-final 펌웨어 (`2.3.0-ctrl`) 운영 유지 (운영 중단 0초)
