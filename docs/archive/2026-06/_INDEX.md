@@ -8,6 +8,7 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 |---------|------|:---:|:---:|----------|------|
 | [RemoteDeck_Touch_v2.1](./RemoteDeck_Touch_v2.1/) | 2026-06-22 (1일) | **68%** | 0 | 2026-06-22 | LAN 스택 통일 완료. WebUI/PNG는 v2.2로 분리 |
 | [RemoteDeck_Touch_v2.2](./RemoteDeck_Touch_v2.2/) | 2026-06-23 (1일) | **49%** | 0 | 2026-06-23 | sync WebServer 가설 폐기. v2.3 esp_http_server 재설계로 분리. 코드는 v2.2-zero 브랜치 보존 |
+| [RemoteDeck_Touch_v2.3](./RemoteDeck_Touch_v2.3/) | 2026-06-23 ~ 2026-06-26 (4일) | **86.4%** | 0 | 2026-06-26 | esp_http_server 5 모듈 완성. SPI 버스 공유 충돌로 WebUI/PNG/OTA 비활성. 핵심 API+Control 운영. 코드는 v2.3-httpd 브랜치 보존 |
 
 ## RemoteDeck_Touch_v2.1 요약
 
@@ -62,3 +63,30 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 1. WebServer = esp_http_server (ESP-IDF native, 별도 task)
 2. PoC = 풀세트 케이스 시뮬레이션 (단발 검증의 한계 학습)
 3. PNG / OTA / Control 탭 / 시간 UI (v2.1 사용자 보고)
+
+## RemoteDeck_Touch_v2.3 핵심 학습
+
+**시도**: esp_http_server (ESP-IDF native, core 0 task) zero-base 재설계 + 5 모듈 (WebServer / ImageApi / ConfigApi / Logger / ControlApi / OtaApi) 완성
+
+**결과**: PoC 통과 후 module-webui/ota/control 모두 코드 완성 → 운영 단계에서 **SPI 버스 공유 충돌** 발견
+- W5500 (ETH) + TFT_eSPI (LCD) 가 동일 VSPI host + 동일 GPIO (SCK=18/MOSI=23/MISO=19) 공유
+- 작은 응답 (< 1KB) OK / 큰 응답 (수십 KB) 시 LVGL flush starvation → hang
+- WebUI/PNG/OTA 비활성, 핵심 API + Control 유지
+
+**Match Rate 86.4%** (FR 11개 중 Met 6 / Partial 3 / Not Met 2)
+
+**보존 자산**:
+- `v2.3-httpd` 브랜치 (origin push 완료, 15 commits) — 5 모듈 코드 전체 + WebUI 4탭 + gzip 빌드 파이프라인
+- PoC 검증 스크립트 (run_poc.sh, mqtt_pub.py, control_verify.py, capture_serial.py)
+- binary-safe multipart parser (Arduino String 0x00 bug fix)
+- PNG IHDR 사전 heap check 안전장치 코드
+
+**v2.4 인계**:
+1. **SPI 버스 충돌 해결 (최우선)**
+   - Option A: TFT 27MHz → 10MHz (추천, 가장 안전)
+   - Option B: TFT_eSPI mutex 명시 + W5500 SPI clock 조정
+   - Option C: TFT 핀 변경 → HSPI 전용 host (H/W rewire 필요)
+2. 해결 후 INDEX_HTML_GZ 재활성 (WebUI 풀세트)
+3. PNG decoder 재활성 + LCD touch 검증
+4. OTA partition 변경 (huge_app.csv → min_spiffs.csv 또는 custom)
+5. NFR 정정 (heap baseline 100KB → 40KB)
