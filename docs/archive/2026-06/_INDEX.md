@@ -10,6 +10,7 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 | [RemoteDeck_Touch_v2.2](./RemoteDeck_Touch_v2.2/) | 2026-06-23 (1일) | **49%** | 0 | 2026-06-23 | sync WebServer 가설 폐기. v2.3 esp_http_server 재설계로 분리. 코드는 v2.2-zero 브랜치 보존 |
 | [RemoteDeck_Touch_v2.3](./RemoteDeck_Touch_v2.3/) | 2026-06-23 ~ 2026-06-26 (4일) | **86.4%** | 0 | 2026-06-26 | esp_http_server 5 모듈 완성. SPI 버스 공유 충돌로 WebUI/PNG/OTA 비활성. 핵심 API+Control 운영. 코드는 v2.3-httpd 브랜치 보존 |
 | [RemoteDeck_Touch_v2.4](./RemoteDeck_Touch_v2.4/) | 2026-06-26 (1일) | **12.1%** | 0 | 2026-06-26 | 시간 분할 (Web active + LCD freeze) 가설 폐기. ESP32 SPI host mutex wait 한계. v2.5 분기 (freq 조정 / H/W rewire / 보드 변경 / WebUI 영구 포기). 코드는 v2.4-spi 브랜치 보존 |
+| [RemoteDeck_Touch_v2.5](./RemoteDeck_Touch_v2.5/) | 2026-06-26 (1일) | **97.1%** | 0 | 2026-06-26 | **WebUI sunset 정식 마감**. WebServer 코드 전체 제거 (25 파일 + 51 line). Flash -95KB (-3.1%), MQTT 양방향 자동 검증. v2.1 LCD/MQTT only 패턴 복귀. Branch `v2.5-sunset` |
 
 ## RemoteDeck_Touch_v2.1 요약
 
@@ -128,3 +129,39 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 | **E. WebUI 영구 포기** | v2.3-final minimal 운영 (API only) | **가장 빠름** |
 
 **단말 상태**: v2.3-final 펌웨어 (`2.3.0-ctrl`) 운영 유지 (운영 중단 0초)
+
+## RemoteDeck_Touch_v2.5 핵심 학습
+
+**결정**: v2.4 5개 옵션 중 **E (WebUI 영구 포기)** + 사용자 추가 지시 "webserver 관련 전부 제거" 채택 → **Subtractive Design** sunset cycle
+
+**구현**: 3 commit (Subtractive only — insertion=0)
+- `d000f9d` — 디렉토리/파일 일괄 제거 (src/web/ 14 + data/www/ 3 + tools/embed_www.py + test/poc/ 8)
+- `116cef5` — main.cpp WebServer 코드 51 line 제거 (#include 6 + 인스턴스 7 + setup/loop/message_process 호출)
+- `4e791d9` — platformio.ini CONFIG_HTTPD_MAX_REQ_HDR_LEN/URI_LEN 제거
+
+**Match Rate 97.1%** (Met 10 / Partial 1 / Not Met 0, Critical Gap 0)
+- Structural 100% / Functional 95.5% / Contract 100% / Runtime 95%
+
+**Build 결과** (Plan 예상의 2배):
+- Flash 1,838,300 → **1,740,984 B (-95KB, -3.1%)**
+- RAM 121,184 → 116,920 B (-1.3%)
+
+**자동 검증**:
+- HTTP 80 Connection refused (외부 admin = MQTT only 확정)
+- ping 1ms, 0% loss
+- MQTT 양방향 (paho-mqtt 6 messages @ t=41~42s, room/{device_id} ↔ room/client)
+
+**보존 사항 (v2.1~v2.3 개선)**:
+- LAN 스택 통일, Long-click 1회 진입, Sleep 저장/복원, BMP heap guard
+- TFT_eSPI 2.5.43, pioarduino 53.x, HTTPClient, DHCP 15s
+- MQTT 양방향 (room/{device_id})
+
+**Branch 전략**: `v2.5-sunset` (main / v2.3-httpd 보호, origin push 없음)
+- 학습 자산은 `v2.3-httpd` / `v2.4-spi` 브랜치 origin 그대로 보존 → v2.6 (ESP32-S3/WROVER) 시 재시도 가능
+
+**Lessons Learned**:
+- **Keep**: Subtractive Design 명시화, 3-cycle PDCA escalation (v2.3 → v2.4 → v2.5), 브랜치 자산 보존
+- **Problem**: Plan Flash 추정 2배 오차, M2/M3 LCD 직접 검증 자동화 불가, heredoc `$()` 우회 필요
+- **Try**: 사전 `pio run -t size`, LCD touch event injection MQTT 명령, v2.6 ESP32-S3 PoC
+
+**5-cycle 여정 마감**: v2.1 (68%) → v2.2 (49%) → v2.3 (86.4%) → v2.4 (12.1%) → **v2.5 (97.1%)** WebUI 실험 cycle 정식 종료
