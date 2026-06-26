@@ -14,13 +14,8 @@
 #include "mqtt/ethernet_mqtt.h"
 #include "images/images.h"
 #include "utils/TypeUtils.h"
-// Design Ref: §5.3 Component List — Web Layer (v2.3 module-webui)
-#include "web/WebServer.h"
-#include "web/ImageApi.h"
-#include "web/ConfigApi.h"
-#include "web/Logger.h"
-#include "web/OtaApi.h"
-#include "web/ControlApi.h"
+// v2.5: WebServer 코드 전체 제거 — v2.1 LCD/MQTT only 패턴 복귀
+// v2.3/v2.4 archive: SPI 충돌 본질 한계 정식 수용
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -41,14 +36,7 @@ PubSubClient mqttEthernet_Client(ethClient);
 String httpUrl = "";
 uint16_t httpPort = 0;
 
-// v2 Web UI - Plan SC: FR-01, FR-02, FR-03, FR-04
-WebServer webServer;
-ImageApi  imageApi;
-ConfigApi configApi;
-Logger    webLogger;
-OtaApi    otaApi;
-ControlApi controlApi;
-TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
+// v2.5: WebServer 인스턴스 모두 제거. v2.1 패턴 그대로 LCD + MQTT only.
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
 
@@ -134,31 +122,8 @@ void setup()
     // v2.3-httpd module-webui: esp_http_server + 풀세트 API
     // Design Ref: §2.1, §4 — core 0 별도 task, LVGL/MQTT (core 1) 와 격리
     // Plan SC: FR-01, FR-03, FR-04, FR-08
-    {
-        IPAddress ip = ETH.localIP();
-        imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.3.0-ctrl", "2026-06-25");
-    }
-    // 콜백 attach
-    imageApi.attach(&webServer);
-    configApi.attach(&webServer);
-    webLogger.attach(&webServer);
-    otaApi.attach(&webServer);
-    // v2.3 module-control: ControlApi attach + MQTT publish bridge
-    controlApi.begin();
-    controlApi.setMqttPublisher([](const char* status) {
-        // Web POST /api/control 시 호출. ethernet/wifi 자동 분기.
-        if (ethernet_conn) mqttEthernet_publish(status);
-        else if (wifi_conn) mqttHandler.xenoMqttPublish(status);
-    });
-    controlApi.attach(&webServer);
-
-    if (webServer.begin(80, &touchAuth)) {
-        webLogger.log("BOOT", "WebServer started on port 80");
-        Serial.println("WebServer started — 14 endpoints active (incl. /api/control)");
-    } else {
-        Serial.println("WebServer start FAILED");
-    }
+    // v2.5: WebServer 코드 제거. v2.1 LCD/MQTT only 운영.
+    // 외부 admin 은 MQTT room/{device_id} publish 로 IN/OUT 토글.
 
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 
@@ -175,12 +140,7 @@ void loop()
     delay(10);
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
-    // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
-    imageApi.loop();
-    // v2.3 module-webui: /api/reboot 요청 시 1초 grace 후 ESP.restart()
-    configApi.loop();
-    // v2.3 module-ota: Update.end 성공 후 1초 grace 후 신 펌웨어로 reboot
-    otaApi.loop();
+    // v2.5: imageApi/configApi/otaApi.loop() 제거 — WebServer 사라짐
 
     // Mqtt 사용시
     if(ethernet_conn){
@@ -417,18 +377,13 @@ void message_process(String msg) {
 
     // status 에 따라서 추가 처리 로직 작성
     if (strcmp(status, "IN") == 0) {
-        // 여기서 'IN' 상태일 때의 처리 로직 추가
         lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL);
         room = true;
         Serial.println("Room IN");
-        // v2.3 module-control: web Long polling client 갱신
-        controlApi.notifyState(true, false);
     } else if (strcmp(status, "OUT") == 0) {
-        // 여기서 'OUT' 상태일 때의 처리 로직 추가
         lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);
         room = false;
         Serial.println("Room OUT");
-        controlApi.notifyState(false, true);
     }
 
     // tick 값 추출 (서버의 Unix 타임스탬프, UTC 기준)
