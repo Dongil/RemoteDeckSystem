@@ -21,6 +21,9 @@
 #include "web/Logger.h"
 #include "web/OtaApi.h"
 #include "web/ControlApi.h"
+// v2.4 Design Ref: §3.1 — WebActivityMonitor (시간 분할 핵심)
+#include "web/WebActivityMonitor.h"
+#include <TFT_eSPI.h>
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -48,6 +51,12 @@ ConfigApi configApi;
 Logger    webLogger;
 OtaApi    otaApi;
 ControlApi controlApi;
+// v2.4: 시간 분할 monitor + TFT 직접 그리기용 객체
+WebActivityMonitor webMonitor;
+extern TFT_eSPI tft;  // lvgl_touch.cpp 에서 선언된 글로벌
+// v2.4: deferred LCD freeze/resume — core 0 콜백 → core 1 main loop 에서 실행
+volatile bool pending_freeze = false;
+volatile bool pending_resume = false;
 TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -76,6 +85,10 @@ void sendHttpMessage(const char* msg);  //http request로 메세지 전송 함�
 void message_process(String msg);   //mqtt, webrequest에서 받아온 메세지 처리 함수
 void gotoDeviceManager();   //장치 설정으로 이동
 void ibtnLogo_LongClick(lv_event_t * e);  // v2.1: LV_EVENT_LONG_PRESSED 핸들러 (setup() 에서 직접 등록)
+// v2.4 Design Ref: §5.1, §2.2 — 시간 분할 LCD 제어
+void freezeLCD();   // markActive() 진입 시 TFT 에 "웹 접속 중" 텍스트 직접 그림
+void resumeLCD();   // idle 또는 touch 후 LVGL 복귀 (lv_obj_invalidate)
+void poll_touch_for_resume();  // LCD freeze 중 FT6236G I2C 직접 polling → notifyTouch
 
 void setup()
 {
@@ -137,7 +150,7 @@ void setup()
     {
         IPAddress ip = ETH.localIP();
         imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.3.0-ctrl", "2026-06-25");
+        imageApi.setFirmwareInfo("2.4.0-spi", "2026-06-26");
     }
     // 콜백 attach
     imageApi.attach(&webServer);
@@ -152,6 +165,16 @@ void setup()
         else if (wifi_conn) mqttHandler.xenoMqttPublish(status);
     });
     controlApi.attach(&webServer);
+
+    // v2.4 Design Ref: §2.2 — 시간 분할 핵심 wiring (deferred 콜백)
+    // 주의: markActive() 는 core 0 httpd task 에서 호출됨.
+    // 콜백 안에서 TFT 직접 호출 시 core 1 의 LVGL flush 와 SPI race.
+    // → 콜백은 flag set 만, 실제 freeze/resume 는 main loop (core 1) 에서.
+    webMonitor.setOnModeChange([](bool active) {
+        if (active) pending_freeze = true;
+        else        pending_resume = true;
+    });
+    webServer.setActivityMonitor(&webMonitor);
 
     if (webServer.begin(80, &touchAuth)) {
         webLogger.log("BOOT", "WebServer started on port 80");
@@ -173,7 +196,21 @@ HTTPClient http;
 void loop()
 {
     delay(10);
-    lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
+
+    // v2.4 Design Ref: §2.2 — 시간 분할 핵심 (deferred pattern)
+    // Plan SC: FR-01, FR-02, FR-03, FR-04
+    // pending flag 우선 처리 (core 1 에서만 TFT 호출 보장)
+    if (pending_freeze) { pending_freeze = false; freezeLCD(); }
+    if (pending_resume) { pending_resume = false; resumeLCD(); }
+
+    if (webMonitor.shouldFreezeLcd()) {
+        // LCD freeze 중 — LVGL/TFT_eSPI 호출 안 함 → ETH 가 SPI 단독 점유
+        // 단 FT6236G I2C 는 SPI 무관이라 touch tap-to-acquire 감지 가능
+        poll_touch_for_resume();
+    } else {
+        // 평소 (Web idle) — LVGL 정상 동작
+        lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
+    }
 
     // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
     imageApi.loop();
@@ -693,3 +730,45 @@ extern void ibtnRoom_Click(lv_event_t * e)   // 재부재 버턴 이벤트 핸�
 /*
 2032_25_SPI_CU 프로젝트 : 2025.02.20 - mqtt 연결시 받아온 tick을 시간으로 변환해서 지정시간에 재부팅하는 기능 추가
 */
+
+// v2.4 Design Ref: §5.1 — LCD freeze 시 전체 화면 안내 텍스트
+// TFT_eSPI 로 직접 그림 (LVGL 비활성 상태). SPI transaction 짧음 (~수 ms).
+void freezeLCD() {
+    Serial.println("[WebMonitor] FREEZE LCD (web active)");
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);  // middle-center
+
+    tft.setTextSize(3);
+    tft.drawString("Web Active", 120, 100);
+
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.drawString("Please wait...", 120, 160);
+
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.drawString("Touch screen to resume", 120, 220);
+}
+
+// LVGL 복귀 — 전체 화면 redraw 강제
+void resumeLCD() {
+    Serial.println("[WebMonitor] RESUME LCD (web idle/touch)");
+    // 현재 active screen 의 모든 object invalidate → 다음 lvgl_loop() 에서 redraw
+    lv_obj_t* scr = lv_scr_act();
+    if (scr) lv_obj_invalidate(scr);
+}
+
+// LCD freeze 중 FT6236G I2C polling → touch 감지 시 monitor.notifyTouch()
+// I2C 라 SPI 무관. 매 main loop tick 호출 (overhead ~수 ms).
+void poll_touch_for_resume() {
+    uint16_t pts[4];
+    int n = getTouch(pts);
+    if (n > 0) {
+        Serial.printf("[WebMonitor] LCD touch detected (x=%u y=%u) → notifyTouch\n",
+                      pts[0], pts[1]);
+        webMonitor.notifyTouch();
+        // 짧은 delay 로 같은 누름 반복 감지 회피
+        delay(150);
+    }
+}

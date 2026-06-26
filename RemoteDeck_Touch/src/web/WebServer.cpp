@@ -2,6 +2,7 @@
 // Plan SC: FR-01, FR-02, FR-03, FR-04, FR-08
 
 #include "WebServer.h"
+#include "WebActivityMonitor.h"
 #include "embedded_assets.h"
 #include <SPIFFS.h>
 #include <esp_log.h>
@@ -75,6 +76,9 @@ void WebServer::sendJsonString(httpd_req_t* req, int statusCode, const String& j
 }
 
 bool WebServer::requireAuth(httpd_req_t* req) {
+    // v2.4 Design Ref: §2.2 — 모든 handler 진입 시 web active 표시
+    // Plan SC: FR-01. Auth 성공/실패 무관하게 활동 자체로 기록 (failed auth 도 SPI 점유)
+    if (_monitor) _monitor->markActive();
     if (!_auth) return true;
     size_t hdrLen = httpd_req_get_hdr_value_len(req, "Authorization");
     if (hdrLen == 0 || hdrLen > 256) { send401(req); return false; }
@@ -217,35 +221,14 @@ static esp_err_t sendProgmem(httpd_req_t* req, const char* data, const char* mim
 }
 esp_err_t WebServer::handleRoot(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;
-    // v2.3-final: WebUI 비활성 — SPI 버스 (W5500+TFT_eSPI VSPI 공유) 충돌로
-    //   큰 응답 (수십 KB) 시 hang. v2.4 sub-task 로 분리:
-    //     - SPI frequency 낮춤 (TFT 27MHz → 10MHz)
-    //     - TFT_eSPI mutex 명시적 동기화
-    //     - 또는 LCD H/W rewire (별도 SPI host)
-    //   API 엔드포인트 (/api/control, /api/status 등) 는 정상 작동 (< 1KB 응답).
-    static const char* minimal_html =
-        "<!DOCTYPE html><html><head><meta charset=utf-8>"
-        "<title>RemoteDeck_Touch v2.3</title>"
-        "<style>body{font-family:sans-serif;max-width:600px;margin:20px auto;padding:16px}"
-        "code{background:#eee;padding:2px 6px;border-radius:3px}</style>"
-        "</head><body>"
-        "<h1>RemoteDeck_Touch v2.3</h1>"
-        "<p><strong>WebUI deferred</strong> — SPI bus (VSPI: W5500+TFT) contention "
-        "causes hangs on large responses. To be addressed in v2.4.</p>"
-        "<p>API endpoints functional:</p>"
-        "<ul>"
-        "<li><a href=/api/status>GET /api/status</a></li>"
-        "<li><a href='/api/control?since=0'>GET /api/control?since=N</a> (polling)</li>"
-        "<li>POST /api/control body <code>{\"in\":true}</code> or <code>{\"out\":true}</code></li>"
-        "<li><a href=/api/log>GET /api/log</a></li>"
-        "<li><a href=/api/config>GET /api/config</a></li>"
-        "<li><a href=/api/images/list>GET /api/images/list</a></li>"
-        "</ul>"
-        "<p>Auth: admin:12345 (Basic)</p>"
-        "</body></html>";
+    // v2.4 Design Ref: §4 — INDEX_HTML_GZ (gzip 7KB inline HTML) 재활성
+    // Plan SC: FR-05, FR-06
+    // 시간 분할 (markActive → LCD freeze) 로 SPI 충돌 회피되므로 큰 응답 OK.
     httpd_resp_set_status(req, "200 OK");
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_send(req, minimal_html, strlen(minimal_html));
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, (const char*)INDEX_HTML_GZ, INDEX_HTML_GZ_LEN);
 }
 esp_err_t WebServer::handleStyle(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;

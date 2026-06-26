@@ -10,6 +10,8 @@
 #include <esp_http_server.h>
 #include <functional>
 
+class WebActivityMonitor;
+
 struct TouchAuth {
     const char* user = "admin";
     const char* pass = "12345";
@@ -57,6 +59,8 @@ public:
     void setControlGetter(ControlGetter cb)             { _ctrlGet         = cb; }
     void setControlSetter(ControlSetter cb)             { _ctrlSet         = cb; }
     void setControlCurrentGetter(ControlCurrentGetter cb){ _ctrlCurrent    = cb; }
+    // v2.4: Web active monitor — handler 진입 시 markActive() 호출
+    void setActivityMonitor(WebActivityMonitor* m)      { _monitor         = m;  }
 
     httpd_handle_t handle() const { return _server; }
 
@@ -80,6 +84,7 @@ private:
     ControlGetter        _ctrlGet         = nullptr;
     ControlSetter        _ctrlSet         = nullptr;
     ControlCurrentGetter _ctrlCurrent     = nullptr;
+    WebActivityMonitor*  _monitor         = nullptr;
 
     // 공통 유틸
     bool requireAuth(httpd_req_t* req);
