@@ -13,14 +13,40 @@
 </header>
 
 <nav class="tabs">
-  <button class="tab active" data-tab="images">Images</button>
+  <button class="tab active" data-tab="control">Control</button>
+  <button class="tab" data-tab="images">Images</button>
   <button class="tab" data-tab="config">Config</button>
   <button class="tab" data-tab="logs">Logs</button>
 </nav>
 
 <main>
+  <!-- Control Tab -->
+  <section class="tab-panel active" id="tab-control">
+    <div class="card">
+      <h2>현재 상태</h2>
+      <div class="ctrl-status">
+        <div class="ctrl-indicator" id="ctrlIndicator">
+          <div class="state-circle" id="ctrlCircle"></div>
+          <div class="state-label" id="ctrlLabel">—</div>
+        </div>
+        <div class="ctrl-meta">
+          <div>etag: <span id="ctrlEtag">0</span></div>
+          <div>polling: <span id="ctrlPolling">idle</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>토글</h2>
+      <div class="ctrl-buttons">
+        <button id="btnIn" class="ctrl-btn ctrl-in">재실 (IN)</button>
+        <button id="btnOut" class="ctrl-btn ctrl-out">부재 (OUT)</button>
+      </div>
+      <p class="hint">버튼 클릭 시 MQTT room/client 토픽으로 publish + LCD 동기 미러.</p>
+    </div>
+  </section>
+
   <!-- Images Tab -->
-  <section class="tab-panel active" id="tab-images">
+  <section class="tab-panel" id="tab-images">
     <div class="card">
       <h2>현재 이미지</h2>
       <div class="card-row" id="imageCards"><!-- JS --></div>

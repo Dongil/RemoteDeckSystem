@@ -14,6 +14,67 @@ function activateTab(name) {
   if (name === 'logs') refreshLog();
 }
 
+// ---------- Control Tab (Long polling 10s + ETag) ----------
+let ctrlEtag = 0;
+let ctrlPolling = false;
+let ctrlAbort = null;
+
+function renderCtrl(d) {
+  const circle = $('ctrlCircle'), label = $('ctrlLabel');
+  const btnIn = $('btnIn'), btnOut = $('btnOut');
+  circle.className = 'state-circle' + (d.in ? ' in' : d.out ? ' out' : '');
+  label.className = 'state-label' + (d.in ? ' in' : d.out ? ' out' : '');
+  label.textContent = d.in ? '재실 (IN)' : d.out ? '부재 (OUT)' : '대기';
+  btnIn.classList.toggle('active', d.in);
+  btnOut.classList.toggle('active', d.out);
+  $('ctrlEtag').textContent = d.etag;
+}
+
+async function pollControl() {
+  if (ctrlPolling) return;
+  ctrlPolling = true;
+  $('ctrlPolling').textContent = 'polling…';
+  while (ctrlPolling) {
+    try {
+      ctrlAbort = new AbortController();
+      const r = await fetch(`/api/control?since=${ctrlEtag}`, { signal: ctrlAbort.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      ctrlEtag = d.etag;
+      renderCtrl(d);
+    } catch (e) {
+      if (e.name === 'AbortError') break;
+      $('ctrlPolling').textContent = 'error: ' + e.message;
+      await new Promise(r => setTimeout(r, 2000));  // back-off
+    }
+  }
+  $('ctrlPolling').textContent = 'idle';
+}
+
+function stopPolling() {
+  ctrlPolling = false;
+  if (ctrlAbort) ctrlAbort.abort();
+}
+
+async function toggleControl(state) {
+  // state: 'in' or 'out'
+  const body = state === 'in' ? { in: true } : { out: true };
+  try {
+    const r = await fetch('/api/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    ctrlEtag = d.etag;
+    renderCtrl(d);
+    toast(`${state.toUpperCase()} 전송됨 (etag=${d.etag})`);
+  } catch (e) {
+    toast('전송 실패: ' + e.message, true);
+  }
+}
+
 // ---------- Status ----------
 async function fetchStatus() {
   try {
@@ -301,6 +362,10 @@ async function init() {
   // log buttons
   $('logRefresh').addEventListener('click', refreshLog);
   $('logAuto').addEventListener('change', toggleLogAuto);
+  // control buttons + long polling 시작
+  $('btnIn').addEventListener('click', () => toggleControl('in'));
+  $('btnOut').addEventListener('click', () => toggleControl('out'));
+  pollControl();  // 페이지 로딩 시 즉시 시작 (Control 탭 기본 활성)
   // status — 5초 폴링 (이미지 탭 외에도 항상)
   await fetchStatus();
   setInterval(fetchStatus, 5000);

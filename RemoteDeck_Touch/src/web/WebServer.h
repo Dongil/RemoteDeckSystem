@@ -36,6 +36,10 @@ public:
     // v2.3 module-ota 시그니처 — Image upload 와 동일 패턴 (start + chunk)
     using OtaStarter           = std::function<bool(size_t total)>;
     using OtaChunk             = std::function<bool(uint8_t* data, size_t len, bool isFinal)>;
+    // v2.3 module-control 시그니처 — Long polling + POST toggle
+    using ControlGetter        = std::function<bool(uint32_t since, String& outJson)>;
+    using ControlSetter        = std::function<bool(const String& body, String& outJson, String& err)>;
+    using ControlCurrentGetter = std::function<String()>;
 
     void setStatusGetter(StatusGetter cb)               { _getStatus       = cb; }
     void setImagesListGetter(ImagesListGetter cb)       { _getImagesList   = cb; }
@@ -50,6 +54,9 @@ public:
     void setRebootHandler(RebootHandler cb)             { _onReboot        = cb; }
     void setOtaStarter(OtaStarter cb)                   { _otaStart        = cb; }
     void setOtaChunk(OtaChunk cb)                       { _otaChunk        = cb; }
+    void setControlGetter(ControlGetter cb)             { _ctrlGet         = cb; }
+    void setControlSetter(ControlSetter cb)             { _ctrlSet         = cb; }
+    void setControlCurrentGetter(ControlCurrentGetter cb){ _ctrlCurrent    = cb; }
 
     httpd_handle_t handle() const { return _server; }
 
@@ -70,6 +77,9 @@ private:
     RebootHandler        _onReboot        = nullptr;
     OtaStarter           _otaStart        = nullptr;
     OtaChunk             _otaChunk        = nullptr;
+    ControlGetter        _ctrlGet         = nullptr;
+    ControlSetter        _ctrlSet         = nullptr;
+    ControlCurrentGetter _ctrlCurrent     = nullptr;
 
     // 공통 유틸
     bool requireAuth(httpd_req_t* req);
@@ -100,6 +110,8 @@ private:
     static esp_err_t trampolineLog(httpd_req_t* req);
     static esp_err_t trampolineReboot(httpd_req_t* req);
     static esp_err_t trampolineOtaUpload(httpd_req_t* req);
+    static esp_err_t trampolineControlGet(httpd_req_t* req);
+    static esp_err_t trampolineControlPost(httpd_req_t* req);
 
     // 실제 핸들러
     esp_err_t handleRoot(httpd_req_t* req);
@@ -116,6 +128,8 @@ private:
     esp_err_t handleLog(httpd_req_t* req);
     esp_err_t handleReboot(httpd_req_t* req);
     esp_err_t handleOtaUpload(httpd_req_t* req);
+    esp_err_t handleControlGet(httpd_req_t* req);
+    esp_err_t handleControlPost(httpd_req_t* req);
 
     // Multipart upload helper (state machine within single req scope)
     esp_err_t streamMultipartToCallback(httpd_req_t* req, const String& boundary);

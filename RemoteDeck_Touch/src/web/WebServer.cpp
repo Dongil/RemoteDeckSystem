@@ -164,6 +164,8 @@ void WebServer::registerHandlers() {
     reg("/api/log",          HTTP_GET,    &WebServer::trampolineLog);
     reg("/api/reboot",       HTTP_POST,   &WebServer::trampolineReboot);
     reg("/api/ota",          HTTP_POST,   &WebServer::trampolineOtaUpload);
+    reg("/api/control",      HTTP_GET,    &WebServer::trampolineControlGet);
+    reg("/api/control",      HTTP_POST,   &WebServer::trampolineControlPost);
 }
 
 // --- Trampolines (boilerplate) ---
@@ -185,6 +187,8 @@ TRAMP(trampolineConfigPost,   handleConfigPost)
 TRAMP(trampolineLog,          handleLog)
 TRAMP(trampolineReboot,       handleReboot)
 TRAMP(trampolineOtaUpload,    handleOtaUpload)
+TRAMP(trampolineControlGet,   handleControlGet)
+TRAMP(trampolineControlPost,  handleControlPost)
 #undef TRAMP
 
 // --- Static handlers (PROGMEM embed — SPIFFS 미사용) ---
@@ -645,6 +649,75 @@ esp_err_t WebServer::handleOtaUpload(httpd_req_t* req) {
     } else {
         logEvent("OTA", "fail");
         sendJson(req, 500, "{\"ok\":false,\"error\":\"ota_failed\"}");
+    }
+    return ESP_OK;
+}
+
+// --- /api/control GET (Long polling 10s + ETag) ---
+// Query: ?since=<etag>
+//   - 클라이언트가 보낸 etag 와 현재 etag 다르면 즉시 응답
+//   - 같으면 EventGroup 에 STATE_CHANGED bit set 까지 최대 10초 wait
+//   - timeout 시도 200 (same etag 포함) — 클라이언트는 같은 etag 면 UI 변경 없이 재폴링
+esp_err_t WebServer::handleControlGet(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (!_ctrlGet || !_ctrlCurrent) {
+        sendJson(req, 500, "{\"ok\":false,\"error\":\"no_handler\"}");
+        return ESP_OK;
+    }
+
+    // since 쿼리 파싱
+    uint32_t since = 0;
+    size_t qlen = httpd_req_get_url_query_len(req);
+    if (qlen > 0 && qlen < 64) {
+        char q[64];
+        if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+            char val[16];
+            if (httpd_query_key_value(q, "since", val, sizeof(val)) == ESP_OK) {
+                since = (uint32_t)strtoul(val, nullptr, 10);
+            }
+        }
+    }
+
+    String body;
+    _ctrlGet(since, body);  // blocking up to 10s
+    sendJsonString(req, 200, body);
+    return ESP_OK;
+}
+
+// --- /api/control POST ---
+// Body: {"in": true} 또는 {"out": true}
+esp_err_t WebServer::handleControlPost(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (!_ctrlSet) {
+        sendJson(req, 500, "{\"ok\":false,\"error\":\"no_handler\"}");
+        return ESP_OK;
+    }
+    if (req->content_len == 0 || req->content_len > 256) {
+        sendJson(req, 400, "{\"ok\":false,\"error\":\"bad_body\"}");
+        return ESP_OK;
+    }
+    char buf[260];
+    size_t remain = req->content_len;
+    size_t got = 0;
+    while (got < remain) {
+        int r = httpd_req_recv(req, buf + got, remain - got);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            sendJson(req, 500, "{\"ok\":false,\"error\":\"recv_failed\"}");
+            return ESP_OK;
+        }
+        got += r;
+    }
+    buf[got] = 0;
+    String body = String(buf);
+    String out, err;
+    if (_ctrlSet(body, out, err)) {
+        logEvent("CTRL", out.c_str());
+        sendJsonString(req, 200, out);
+    } else {
+        char e[160];
+        snprintf(e, sizeof(e), "{\"ok\":false,\"error\":\"%s\"}", err.c_str());
+        sendJson(req, 400, e);
     }
     return ESP_OK;
 }

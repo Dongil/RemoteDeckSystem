@@ -20,6 +20,7 @@
 #include "web/ConfigApi.h"
 #include "web/Logger.h"
 #include "web/OtaApi.h"
+#include "web/ControlApi.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -46,6 +47,7 @@ ImageApi  imageApi;
 ConfigApi configApi;
 Logger    webLogger;
 OtaApi    otaApi;
+ControlApi controlApi;
 TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -135,17 +137,25 @@ void setup()
     {
         IPAddress ip = ETH.localIP();
         imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.3.0-ota", "2026-06-25");
+        imageApi.setFirmwareInfo("2.3.0-ctrl", "2026-06-25");
     }
     // 콜백 attach
     imageApi.attach(&webServer);
     configApi.attach(&webServer);
     webLogger.attach(&webServer);
-    otaApi.attach(&webServer);  // /api/ota: setOtaStarter + setOtaChunk
+    otaApi.attach(&webServer);
+    // v2.3 module-control: ControlApi attach + MQTT publish bridge
+    controlApi.begin();
+    controlApi.setMqttPublisher([](const char* status) {
+        // Web POST /api/control 시 호출. ethernet/wifi 자동 분기.
+        if (ethernet_conn) mqttEthernet_publish(status);
+        else if (wifi_conn) mqttHandler.xenoMqttPublish(status);
+    });
+    controlApi.attach(&webServer);
 
     if (webServer.begin(80, &touchAuth)) {
         webLogger.log("BOOT", "WebServer started on port 80");
-        Serial.println("WebServer started — 12 endpoints active (incl. /api/ota)");
+        Serial.println("WebServer started — 14 endpoints active (incl. /api/control)");
     } else {
         Serial.println("WebServer start FAILED");
     }
@@ -408,14 +418,17 @@ void message_process(String msg) {
     // status 에 따라서 추가 처리 로직 작성
     if (strcmp(status, "IN") == 0) {
         // 여기서 'IN' 상태일 때의 처리 로직 추가
-        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL); 
+        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL);
         room = true;
         Serial.println("Room IN");
+        // v2.3 module-control: web Long polling client 갱신
+        controlApi.notifyState(true, false);
     } else if (strcmp(status, "OUT") == 0) {
         // 여기서 'OUT' 상태일 때의 처리 로직 추가
-        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);  
+        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);
         room = false;
         Serial.println("Room OUT");
+        controlApi.notifyState(false, true);
     }
 
     // tick 값 추출 (서버의 Unix 타임스탬프, UTC 기준)

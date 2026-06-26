@@ -60,3 +60,21 @@ main{padding:12px;max-width:900px;margin:0 auto}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#16213e;border:1px solid #0ff;color:#0ff;padding:12px 20px;border-radius:6px;font-size:13px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.4);max-width:90%}
 .toast.fail{border-color:#f44;color:#f44}
+
+/* Control tab */
+.ctrl-status{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.ctrl-indicator{display:flex;align-items:center;gap:14px;flex:1}
+.state-circle{width:48px;height:48px;border-radius:50%;background:#333;border:2px solid #555;transition:all .3s}
+.state-circle.in{background:#0a8;border-color:#0fa;box-shadow:0 0 20px #0fa}
+.state-circle.out{background:#a40;border-color:#fa0;box-shadow:0 0 20px #fa0}
+.state-label{font-size:20px;font-weight:bold;color:#888}
+.state-label.in{color:#0fa}
+.state-label.out{color:#fa0}
+.ctrl-meta{color:#888;font-size:12px;font-family:monospace;display:flex;flex-direction:column;gap:4px}
+.ctrl-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ctrl-btn{padding:24px;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;background:#0a0e27;border:2px solid #2a3050;color:#aaa;transition:all .15s}
+.ctrl-btn:hover{transform:translateY(-2px)}
+.ctrl-btn.ctrl-in{border-color:#0fa;color:#0fa}
+.ctrl-btn.ctrl-in:hover,.ctrl-btn.ctrl-in.active{background:#0a8;color:#000}
+.ctrl-btn.ctrl-out{border-color:#fa0;color:#fa0}
+.ctrl-btn.ctrl-out:hover,.ctrl-btn.ctrl-out.active{background:#a40;color:#fff}

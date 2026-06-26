@@ -17,14 +17,40 @@ const char INDEX_HTML[] PROGMEM = R"RDT(<!DOCTYPE html>
 </header>
 
 <nav class="tabs">
-  <button class="tab active" data-tab="images">Images</button>
+  <button class="tab active" data-tab="control">Control</button>
+  <button class="tab" data-tab="images">Images</button>
   <button class="tab" data-tab="config">Config</button>
   <button class="tab" data-tab="logs">Logs</button>
 </nav>
 
 <main>
+  <!-- Control Tab -->
+  <section class="tab-panel active" id="tab-control">
+    <div class="card">
+      <h2>현재 상태</h2>
+      <div class="ctrl-status">
+        <div class="ctrl-indicator" id="ctrlIndicator">
+          <div class="state-circle" id="ctrlCircle"></div>
+          <div class="state-label" id="ctrlLabel">—</div>
+        </div>
+        <div class="ctrl-meta">
+          <div>etag: <span id="ctrlEtag">0</span></div>
+          <div>polling: <span id="ctrlPolling">idle</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>토글</h2>
+      <div class="ctrl-buttons">
+        <button id="btnIn" class="ctrl-btn ctrl-in">재실 (IN)</button>
+        <button id="btnOut" class="ctrl-btn ctrl-out">부재 (OUT)</button>
+      </div>
+      <p class="hint">버튼 클릭 시 MQTT room/client 토픽으로 publish + LCD 동기 미러.</p>
+    </div>
+  </section>
+
   <!-- Images Tab -->
-  <section class="tab-panel active" id="tab-images">
+  <section class="tab-panel" id="tab-images">
     <div class="card">
       <h2>현재 이미지</h2>
       <div class="card-row" id="imageCards"><!-- JS --></div>
@@ -150,6 +176,24 @@ main{padding:12px;max-width:900px;margin:0 auto}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#16213e;border:1px solid #0ff;color:#0ff;padding:12px 20px;border-radius:6px;font-size:13px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.4);max-width:90%}
 .toast.fail{border-color:#f44;color:#f44}
+
+/* Control tab */
+.ctrl-status{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.ctrl-indicator{display:flex;align-items:center;gap:14px;flex:1}
+.state-circle{width:48px;height:48px;border-radius:50%;background:#333;border:2px solid #555;transition:all .3s}
+.state-circle.in{background:#0a8;border-color:#0fa;box-shadow:0 0 20px #0fa}
+.state-circle.out{background:#a40;border-color:#fa0;box-shadow:0 0 20px #fa0}
+.state-label{font-size:20px;font-weight:bold;color:#888}
+.state-label.in{color:#0fa}
+.state-label.out{color:#fa0}
+.ctrl-meta{color:#888;font-size:12px;font-family:monospace;display:flex;flex-direction:column;gap:4px}
+.ctrl-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ctrl-btn{padding:24px;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;background:#0a0e27;border:2px solid #2a3050;color:#aaa;transition:all .15s}
+.ctrl-btn:hover{transform:translateY(-2px)}
+.ctrl-btn.ctrl-in{border-color:#0fa;color:#0fa}
+.ctrl-btn.ctrl-in:hover,.ctrl-btn.ctrl-in.active{background:#0a8;color:#000}
+.ctrl-btn.ctrl-out{border-color:#fa0;color:#fa0}
+.ctrl-btn.ctrl-out:hover,.ctrl-btn.ctrl-out.active{background:#a40;color:#fff}
 )RDT";
 
 const char APP_JS[] PROGMEM = R"RDT(// RemoteDeck_Touch · Web UI (module-webui: Images + Config + Logs)
@@ -166,6 +210,67 @@ function activateTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'config' && !configLoaded) loadConfig();
   if (name === 'logs') refreshLog();
+}
+
+// ---------- Control Tab (Long polling 10s + ETag) ----------
+let ctrlEtag = 0;
+let ctrlPolling = false;
+let ctrlAbort = null;
+
+function renderCtrl(d) {
+  const circle = $('ctrlCircle'), label = $('ctrlLabel');
+  const btnIn = $('btnIn'), btnOut = $('btnOut');
+  circle.className = 'state-circle' + (d.in ? ' in' : d.out ? ' out' : '');
+  label.className = 'state-label' + (d.in ? ' in' : d.out ? ' out' : '');
+  label.textContent = d.in ? '재실 (IN)' : d.out ? '부재 (OUT)' : '대기';
+  btnIn.classList.toggle('active', d.in);
+  btnOut.classList.toggle('active', d.out);
+  $('ctrlEtag').textContent = d.etag;
+}
+
+async function pollControl() {
+  if (ctrlPolling) return;
+  ctrlPolling = true;
+  $('ctrlPolling').textContent = 'polling…';
+  while (ctrlPolling) {
+    try {
+      ctrlAbort = new AbortController();
+      const r = await fetch(`/api/control?since=${ctrlEtag}`, { signal: ctrlAbort.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      ctrlEtag = d.etag;
+      renderCtrl(d);
+    } catch (e) {
+      if (e.name === 'AbortError') break;
+      $('ctrlPolling').textContent = 'error: ' + e.message;
+      await new Promise(r => setTimeout(r, 2000));  // back-off
+    }
+  }
+  $('ctrlPolling').textContent = 'idle';
+}
+
+function stopPolling() {
+  ctrlPolling = false;
+  if (ctrlAbort) ctrlAbort.abort();
+}
+
+async function toggleControl(state) {
+  // state: 'in' or 'out'
+  const body = state === 'in' ? { in: true } : { out: true };
+  try {
+    const r = await fetch('/api/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    ctrlEtag = d.etag;
+    renderCtrl(d);
+    toast(`${state.toUpperCase()} 전송됨 (etag=${d.etag})`);
+  } catch (e) {
+    toast('전송 실패: ' + e.message, true);
+  }
 }
 
 // ---------- Status ----------
@@ -455,6 +560,10 @@ async function init() {
   // log buttons
   $('logRefresh').addEventListener('click', refreshLog);
   $('logAuto').addEventListener('change', toggleLogAuto);
+  // control buttons + long polling 시작
+  $('btnIn').addEventListener('click', () => toggleControl('in'));
+  $('btnOut').addEventListener('click', () => toggleControl('out'));
+  pollControl();  // 페이지 로딩 시 즉시 시작 (Control 탭 기본 활성)
   // status — 5초 폴링 (이미지 탭 외에도 항상)
   await fetchStatus();
   setInterval(fetchStatus, 5000);
