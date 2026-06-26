@@ -22,9 +22,10 @@ class WebServer;
 class ControlApi {
 public:
     static constexpr uint32_t STATE_CHANGED_BIT = (1 << 0);
-    // esp_http_server 단일 task — 긴 polling block 시 다른 요청 모두 block.
-    // 10초 → 1초 단축으로 short-polling 화. latency 1s, 동시성 안전.
-    static constexpr uint32_t LONG_POLL_MS      = 1000;
+    // esp_http_server 단일 task — 긴 polling block 시 다른 요청 block.
+    // 1초 polling 도 max_open_sockets=4 한계에서 socket 압박 누적 → hang.
+    // 즉시 응답 (0ms) + 클라이언트 측 throttle (3s setTimeout) 으로 본질 해결.
+    static constexpr uint32_t LONG_POLL_MS      = 0;
 
     using MqttPublishCb = std::function<void(const char* status)>;  // "IN"/"OUT" publish 콜백
 

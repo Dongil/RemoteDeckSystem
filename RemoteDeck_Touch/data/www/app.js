@@ -45,8 +45,9 @@ async function pollControl() {
     } catch (e) {
       if (e.name === 'AbortError') break;
       $('ctrlPolling').textContent = 'error: ' + e.message;
-      await new Promise(r => setTimeout(r, 2000));  // back-off
     }
+    // 3초 throttle — esp_http_server max_open_sockets=4 한계 압박 회피
+    await new Promise(r => setTimeout(r, 3000));
   }
   $('ctrlPolling').textContent = 'idle';
 }
