@@ -15,16 +15,17 @@ bool WebServer::begin(uint16_t port, const TouchAuth* auth) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     // Design Ref: §2.1 — core 0 pinning
-    // v2.3-poc-B2 config 유지 (PoC 검증 완료)
+    // v2.3-final: PoC B2 baseline (sockets=4) 가 sequential 안전선.
+    // sockets 7 시도 → LRU race 로 즉시 hang. 4 가 ESP-IDF httpd + W5500 의 안전 한계.
     cfg.server_port      = port;
     cfg.task_priority    = 4;
     cfg.stack_size       = 12288;
     cfg.core_id          = 0;
     cfg.max_open_sockets = 4;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 24;
     cfg.lru_purge_enable = true;
     cfg.backlog_conn     = 4;
-    cfg.uri_match_fn     = httpd_uri_match_wildcard;  // /api/images/* 등 wildcard
+    cfg.uri_match_fn     = httpd_uri_match_wildcard;
 
     esp_err_t err = httpd_start(&_server, &cfg);
     if (err != ESP_OK) {
@@ -166,6 +167,7 @@ void WebServer::registerHandlers() {
     reg("/api/ota",          HTTP_POST,   &WebServer::trampolineOtaUpload);
     reg("/api/control",      HTTP_GET,    &WebServer::trampolineControlGet);
     reg("/api/control",      HTTP_POST,   &WebServer::trampolineControlPost);
+    // favicon.ico 는 onNotFound 가 404 처리 (별도 등록 없이 빠른 응답)
 }
 
 // --- Trampolines (boilerplate) ---
@@ -198,9 +200,11 @@ static esp_err_t sendProgmem(httpd_req_t* req, const char* data, const char* mim
     httpd_resp_set_status(req, "200 OK");
     httpd_resp_set_type(req, mime);
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    // 주의: Connection: close 강제 시 LRU race 로 hang 유발 → keep-alive default 유지.
 
     size_t total = strlen(data);
-    const size_t CHUNK = 1024;
+    // chunk 2048 — 1024 대비 throughput ↑ (sequential 처리 시 latency 감소)
+    const size_t CHUNK = 2048;
     size_t sent = 0;
     while (sent < total) {
         size_t n = (total - sent) > CHUNK ? CHUNK : (total - sent);
@@ -213,7 +217,35 @@ static esp_err_t sendProgmem(httpd_req_t* req, const char* data, const char* mim
 }
 esp_err_t WebServer::handleRoot(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;
-    return sendProgmem(req, INDEX_HTML, "text/html; charset=utf-8");
+    // v2.3-final: WebUI 비활성 — SPI 버스 (W5500+TFT_eSPI VSPI 공유) 충돌로
+    //   큰 응답 (수십 KB) 시 hang. v2.4 sub-task 로 분리:
+    //     - SPI frequency 낮춤 (TFT 27MHz → 10MHz)
+    //     - TFT_eSPI mutex 명시적 동기화
+    //     - 또는 LCD H/W rewire (별도 SPI host)
+    //   API 엔드포인트 (/api/control, /api/status 등) 는 정상 작동 (< 1KB 응답).
+    static const char* minimal_html =
+        "<!DOCTYPE html><html><head><meta charset=utf-8>"
+        "<title>RemoteDeck_Touch v2.3</title>"
+        "<style>body{font-family:sans-serif;max-width:600px;margin:20px auto;padding:16px}"
+        "code{background:#eee;padding:2px 6px;border-radius:3px}</style>"
+        "</head><body>"
+        "<h1>RemoteDeck_Touch v2.3</h1>"
+        "<p><strong>WebUI deferred</strong> — SPI bus (VSPI: W5500+TFT) contention "
+        "causes hangs on large responses. To be addressed in v2.4.</p>"
+        "<p>API endpoints functional:</p>"
+        "<ul>"
+        "<li><a href=/api/status>GET /api/status</a></li>"
+        "<li><a href='/api/control?since=0'>GET /api/control?since=N</a> (polling)</li>"
+        "<li>POST /api/control body <code>{\"in\":true}</code> or <code>{\"out\":true}</code></li>"
+        "<li><a href=/api/log>GET /api/log</a></li>"
+        "<li><a href=/api/config>GET /api/config</a></li>"
+        "<li><a href=/api/images/list>GET /api/images/list</a></li>"
+        "</ul>"
+        "<p>Auth: admin:12345 (Basic)</p>"
+        "</body></html>";
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    return httpd_resp_send(req, minimal_html, strlen(minimal_html));
 }
 esp_err_t WebServer::handleStyle(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;

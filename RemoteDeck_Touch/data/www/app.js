@@ -363,13 +363,13 @@ async function init() {
   // log buttons
   $('logRefresh').addEventListener('click', refreshLog);
   $('logAuto').addEventListener('change', toggleLogAuto);
-  // control buttons + long polling 시작
+  // control buttons + 폴링 (page load 후 2초 지연 — 초기 자산 로드 완료 후)
   $('btnIn').addEventListener('click', () => toggleControl('in'));
   $('btnOut').addEventListener('click', () => toggleControl('out'));
-  pollControl();  // 페이지 로딩 시 즉시 시작 (Control 탭 기본 활성)
-  // status — 5초 폴링 (이미지 탭 외에도 항상)
+  // status 먼저 (Control 폴링 보다 우선)
   await fetchStatus();
-  setInterval(fetchStatus, 5000);
+  setTimeout(pollControl, 2000);
+  setInterval(fetchStatus, 10000);  // 5s → 10s 로 부하 ↓
 }
 
 init();
