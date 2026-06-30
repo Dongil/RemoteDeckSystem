@@ -11,6 +11,7 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 | [RemoteDeck_Touch_v2.3](./RemoteDeck_Touch_v2.3/) | 2026-06-23 ~ 2026-06-26 (4일) | **86.4%** | 0 | 2026-06-26 | esp_http_server 5 모듈 완성. SPI 버스 공유 충돌로 WebUI/PNG/OTA 비활성. 핵심 API+Control 운영. 코드는 v2.3-httpd 브랜치 보존 |
 | [RemoteDeck_Touch_v2.4](./RemoteDeck_Touch_v2.4/) | 2026-06-26 (1일) | **12.1%** | 0 | 2026-06-26 | 시간 분할 (Web active + LCD freeze) 가설 폐기. ESP32 SPI host mutex wait 한계. v2.5 분기 (freq 조정 / H/W rewire / 보드 변경 / WebUI 영구 포기). 코드는 v2.4-spi 브랜치 보존 |
 | [RemoteDeck_Touch_v2.5](./RemoteDeck_Touch_v2.5/) | 2026-06-26 (1일) | **97.1%** | 0 | 2026-06-26 | **WebUI sunset 정식 마감**. WebServer 코드 전체 제거 (25 파일 + 51 line). Flash -95KB (-3.1%), MQTT 양방향 자동 검증. v2.1 LCD/MQTT only 패턴 복귀. Branch `v2.5-sunset` |
+| [Integrate_Controller](./Integrate_Controller/) | 2026-06-30 (1일) | **97.9%** | 0 | 2026-06-30 | **신규 PC 통합 컨트롤러**. .NET 8 WinForms + win-x64 SCD single-file (162 MB). RemoteDeck_PC 단말 N대 모니터링/재부팅. DPAPI 자격증명 저장, REST 폴링 + `/api/config` device_id 1회 fetch. 10 컬럼 DataGridView (No/연결/기기 이름/기기 ID/IP/PC/GPIO/FW/Uptime/Last Seen), 우클릭 ContextMenu (브라우저 열기/Reboot/Edit/Delete), `publish.bat` 배포 자동화. 펌웨어 변경 0건. |
 
 ## RemoteDeck_Touch_v2.1 요약
 
@@ -165,3 +166,54 @@ PDCA 문서 아카이브 — 2026년 6월 완료 사이클.
 - **Try**: 사전 `pio run -t size`, LCD touch event injection MQTT 명령, v2.6 ESP32-S3 PoC
 
 **5-cycle 여정 마감**: v2.1 (68%) → v2.2 (49%) → v2.3 (86.4%) → v2.4 (12.1%) → **v2.5 (97.1%)** WebUI 실험 cycle 정식 종료
+
+## Integrate_Controller 핵심 학습
+
+**결정**: 사내 RemoteDeck_PC 단말 다수의 통합 모니터링/재부팅 도구 — Plan 단계에서 **Option C — Pragmatic Models/Services/UI 3-folder** 채택 (Clean Architecture 4-layer는 단일 desktop tool에 과설계 판단)
+
+**구현**: 4 모듈 (sln/csproj/Models/Services + UI + Reboot/Publish) — 1일 4 세션 완성
+- Models: `DeviceEntry`, `DeviceStatus`, `DeviceList` (BindingList)
+- Services: `DeviceStore` (DPAPI), `RemoteDeckClient` (Singleton HttpClient + Basic Auth + GetStatus/Reboot/GetConfig), `DevicePoller` (PeriodicTimer per-device + CTS)
+- UI: `MainForm` (10 컬럼 DataGridView + Toolbar + StatusStrip + Detail panel + ContextMenu), `DeviceEditDialog`, `StatusFormatter`
+
+**Match Rate 97.9%** (Met 9 / Partial 1, Critical Gap 0)
+- Structural 100% / Functional 100% / Contract 100% / Runtime 94%
+
+**Build 결과**:
+- Single-file SCD exe `IntegrateController.exe` = **162 MB** (win-x64)
+- `dotnet build` 경고 0, 오류 0
+- 펌웨어 변경 **0건** (기존 REST API `/api/status` `/api/reboot` `/api/config` 그대로 활용)
+
+**Do 중 사용자 요청 반영 (Deviation, 모두 의도된 개선)**:
+- `Label` 필드 제거 → device_name/device_id 컬럼으로 대체 (정보량↑)
+- 기본 port 80 → 5050 (운영 환경 일치)
+- Grid 360px → 420px (15행 표시)
+- `GetConfigAsync` 추가 (device_id 1회 fetch)
+- "브라우저로 열기" ContextMenu 추가 + `publish.bat` 배포 자동화
+
+**비자명 문제 해결 (3회 hotfix)**:
+- **Index out of range (Column ColStatus 미존재)**: `ConfigureGridColumns()` → `DataSource` 순서 뒤집기 + `AutoGenerateColumns = false`
+- **BindingList 자동 컬럼 노출 (`AuthPasswordProtected` base64까지 화면 노출 위험)**: 모델 전 속성에 `[Browsable(false)]` + 코드로 `AutoGenerateColumns = false` 강제 + Designer에도 명시 (3중 방어선)
+- **reboot timeout 오해**: 펌웨어가 `req->send()` 직후 `ESP.restart()` 호출 → TCP flush 전 재시작 → 클라이언트 timeout. `RebootAsync`가 timeout/`SocketException.ConnectionReset/Aborted/NetworkReset/Shutdown` → **Success + 힌트** 반환으로 보정
+- **VS Designer regenerate가 매번 `ColIp` + `AutoGenerateColumns=false` drop**: IP 컬럼을 `MainForm.cs` 의 `AddIpColumn()` 메서드로 분리 → Designer 파일 밖 → 영구 면역
+- **선택 시 ● 색/행 배경 색 손실**: `DefaultCellStyle.SelectionBackColor` + `SelectionForeColor` 동시 설정 (StatusFormatter에 색 변종 추가)
+- **브라우저 자동 인증 시도 → XHR 캐시 timing race**: URL `user:pass@host/` + 자동 F5 (Win32 `keybd_event`) 모두 실패 → **클린 URL만 열기**로 단순화 (브라우저 Basic Auth 다이얼로그 직접 표시 → 인증 상태 명확)
+
+**보존 자산**:
+- 코드 13 파일 `apitestutility_v2/integrate_controller/IntegrateController/`
+- `publish.bat` 배포 자동화 + `IntegrateController/publish/IntegrateController.exe` (162 MB)
+- 메모리: [[project-rdpc-reboot-flush]] (reboot flush 패턴), [[project-winforms-designer]] (VS Designer + DataGridView 3중 방어선)
+
+**향후 사이클 후보 (선택)**:
+- N=10 정식 시연 (mock server 또는 실 단말)
+- RemoteDeck_PC 펌웨어 `req->send()` + `delay(200)` + `ESP.restart()` 영구 패치
+- device_name UTF-8 한글 깨짐 (펌웨어 측 JSON 직렬화)
+- 단위 테스트 (xUnit) — DeviceStore DPAPI roundtrip, RemoteDeckClient ParseStatus
+- Toolbar 전역 Poll Interval 토글
+
+**Lessons Learned (단순화는 자동화보다 우위)**:
+- 모던 브라우저 자동 인증 자동화 3단계 시도 모두 실패 → 가장 단순한 "클린 URL + 다이얼로그"가 최선
+- VS Designer + DataGridView는 Designer regenerate에 적대적 — unbound 컬럼은 코드로 분리
+- BindingList 보안 위험 (AuthPasswordProtected 노출 가능) — 모델 정의 시점 `[Browsable(false)]` default 적용
+
+**Branch 전략**: 단일 사이클, 단일 main 브랜치 (별도 분기 없음)
