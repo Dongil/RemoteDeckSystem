@@ -1,5 +1,14 @@
 #include "NetManager.h"
 
+namespace {
+    constexpr uint32_t kEthPreInitDelayMs    = 500;    // W5500 POR settle
+    constexpr uint8_t  kEthBeginRetryMax     = 3;
+    constexpr uint32_t kEthBeginRetryDelayMs = 1000;
+    constexpr uint32_t kEthGotIpTimeoutMs    = 20000;  // GOT_IP watchdog
+    constexpr uint16_t kW5500ModeRegAddr     = 0x0000;
+    constexpr uint8_t  kW5500ResetBit        = 0x80;
+}
+
 NetManager* NetManager::_instance = nullptr;
 
 void NetManager::begin(NetworkConfig& config) {
@@ -12,17 +21,14 @@ void NetManager::begin(NetworkConfig& config) {
     WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) { onNetworkEvent(event, info); });
 
     if (config.mode == "wifi") {
-        // Dual network: ETH management (192.168.1.200) + WiFi STA (primary)
         initEthManagement();
         initWiFiSTA(config);
     } else {
-        // Ethernet only (all services on ETH)
         initEthernet(config);
     }
 }
 
 void NetManager::loop() {
-    // Primary network connected notification (once)
     if (_connected && !_notifiedConnected) {
         _notifiedConnected = true;
         digitalWrite(PIN_STATUS1, HIGH);
@@ -32,14 +38,12 @@ void NetManager::loop() {
         if (_onConnected) _onConnected();
     }
 
-    // Primary disconnected
     if (!_connected && _notifiedConnected) {
         _notifiedConnected = false;
         digitalWrite(PIN_STATUS1, LOW);
         Serial.println("Network: Primary disconnected");
     }
 
-    // WiFi STA auto-reconnect
     if (_mode == NetMode::WIFI_STA && !_connected) {
         static unsigned long lastRetry = 0;
         if (millis() - lastRetry > 10000) {
@@ -48,6 +52,8 @@ void NetManager::loop() {
             WiFi.reconnect();
         }
     }
+
+    checkGotIpWatchdog();
 }
 
 IPAddress NetManager::localIP() const {
@@ -70,14 +76,68 @@ IPAddress NetManager::ethManagementIP() const {
 // ─── Ethernet primary mode ─────────────────────────────
 
 void NetManager::initEthernet(NetworkConfig& config) {
-    SPI.begin(PIN_ETH_SCK, PIN_ETH_MISO, PIN_ETH_MOSI, PIN_ETH_CS);
-    Serial.println("Network: Initializing Ethernet (primary)...");
+    delay(kEthPreInitDelayMs);
 
-    if (!ETH.begin(ETH_PHY_W5500, 1, PIN_ETH_CS, PIN_ETH_INT, -1, SPI)) {
-        Serial.println("Network: ETH.begin() failed");
+    SPI.begin(PIN_ETH_SCK, PIN_ETH_MISO, PIN_ETH_MOSI, PIN_ETH_CS);
+    Serial.println("Network: SPI bus init");
+
+    w5500SoftReset();
+    delay(50);
+
+    bool ok = false;
+    for (uint8_t attempt = 1; attempt <= kEthBeginRetryMax; ++attempt) {
+        Serial.printf("Network: ETH.begin() attempt %u/%u\n",
+                      (unsigned)attempt, (unsigned)kEthBeginRetryMax);
+        if (tryEthBegin()) {
+            Serial.println("Network: ETH.begin() OK");
+            ok = true;
+            break;
+        }
+        if (attempt < kEthBeginRetryMax) {
+            w5500SoftReset();
+            delay(kEthBeginRetryDelayMs);
+        }
+    }
+
+    if (!ok) {
+        Serial.println("Network: ETH.begin() exhausted, restarting");
+        delay(1000);
+        ESP.restart();
         return;
     }
-    Serial.println("Network: ETH.begin() OK, waiting for link...");
+
+    _ethBeginAt = millis();
+    _ethWaitingGotIp = true;
+    Serial.printf("Network: Awaiting GOT_IP (timeout %lums)\n",
+                  (unsigned long)kEthGotIpTimeoutMs);
+}
+
+// W5500 software reset: MR (0x0000) bit7 = 1. Recovers from POR garbage.
+void NetManager::w5500SoftReset() {
+    SPISettings settings(8000000, MSBFIRST, SPI_MODE0);
+    SPI.beginTransaction(settings);
+    digitalWrite(PIN_ETH_CS, LOW);
+    SPI.transfer((uint8_t)(kW5500ModeRegAddr >> 8));
+    SPI.transfer((uint8_t)(kW5500ModeRegAddr & 0xFF));
+    SPI.transfer(0x04);              // control: BSB=0, RWB=1 (write), OM=0
+    SPI.transfer(kW5500ResetBit);
+    digitalWrite(PIN_ETH_CS, HIGH);
+    SPI.endTransaction();
+}
+
+bool NetManager::tryEthBegin() {
+    return ETH.begin(ETH_PHY_W5500, 1, PIN_ETH_CS, PIN_ETH_INT, -1, SPI);
+}
+
+// Trigger ESP.restart() if GOT_IP not received within timeout.
+void NetManager::checkGotIpWatchdog() {
+    if (!_ethWaitingGotIp) return;
+    if (millis() - _ethBeginAt <= kEthGotIpTimeoutMs) return;
+
+    Serial.printf("Network: GOT_IP watchdog timeout (%lums), restarting\n",
+                  (unsigned long)kEthGotIpTimeoutMs);
+    delay(500);
+    ESP.restart();
 }
 
 // ─── Ethernet management mode (WiFi mode, hardcoded 192.168.1.200) ──
@@ -91,7 +151,6 @@ void NetManager::initEthManagement() {
         return;
     }
     _ethMgmtActive = true;
-    // Static IP applied in onNetworkEvent after ETH_CONNECTED
 }
 
 // ─── WiFi STA mode ─────────────────────────────────────
@@ -103,12 +162,9 @@ void NetManager::initWiFiSTA(NetworkConfig& config) {
     Serial.printf("  DHCP: %s\n", config.wifiDhcp ? "true" : "false");
 
     WiFi.mode(WIFI_STA);
-
-    // Connect (scan hidden SSIDs too)
     WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str(),
-               0, nullptr, true);  // channel=0, bssid=null, connect=true (scans hidden SSIDs)
+               0, nullptr, true);
 
-    // Static IP applied AFTER WiFi.begin()
     if (!config.wifiDhcp) {
         if (config.wifiIp.empty() || config.wifiIp == "0.0.0.0") {
             Serial.println("  WARNING: Static IP empty - falling back to DHCP");
@@ -146,13 +202,11 @@ void NetManager::onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
         case ARDUINO_EVENT_ETH_CONNECTED:
             Serial.println("Network: ETH Link Up");
             if (_instance->_ethMgmtActive) {
-                // Management mode: hardcoded 192.168.1.200
                 Serial.println("Network: Applying ETH management IP 192.168.1.200");
                 ETH.config(IPAddress(192,168,1,200),
                            IPAddress(192,168,1,1),
                            IPAddress(255,255,255,0));
             } else if (_instance->_config && !_instance->_config->ethDhcp) {
-                // Primary mode: configured static IP
                 Serial.printf("Network: Applying static IP: %s\n",
                               _instance->_config->ethIp.c_str());
                 ETH.config(strToIP(_instance->_config->ethIp),
@@ -164,14 +218,13 @@ void NetManager::onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 
         case ARDUINO_EVENT_ETH_GOT_IP:
             if (_instance->_ethMgmtActive) {
-                // Management ETH: don't set primary _connected
                 if (_instance->_config) _instance->_config->ethMac = ETH.macAddress().c_str();
                 Serial.printf("Network: ETH Management IP: %s (for IPSetupTool)\n",
                               ETH.localIP().toString().c_str());
             } else {
-                // Primary ETH
                 _instance->_connected = true;
                 _instance->_mode = NetMode::ETHERNET;
+                _instance->_ethWaitingGotIp = false;
                 if (_instance->_config) _instance->_config->ethMac = ETH.macAddress().c_str();
                 Serial.printf("Network: ETH Got IP: %s, MAC: %s\n",
                               ETH.localIP().toString().c_str(), ETH.macAddress().c_str());
@@ -207,8 +260,6 @@ void NetManager::onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
                     lastLog = millis();
                     lastReason = reason;
                     Serial.printf("Network: WiFi Disconnected (reason: %d)\n", reason);
-                    // Common reasons: 2=AUTH_EXPIRE, 15=4WAY_HANDSHAKE_TIMEOUT(wrong pw),
-                    // 201=NO_AP_FOUND, 6=NOT_AUTHED, 7=NOT_ASSOCED
                 }
             }
             break;

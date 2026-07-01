@@ -67,8 +67,8 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.ntp.timezone = doc["ntp"]["timezone"] | "KST-9";
 
     // Firmware
-    config.firmware.version = doc["firmware"]["version"] | "2.3.0";
-    config.firmware.date = doc["firmware"]["date"] | "2026-06-10";
+    config.firmware.version = doc["firmware"]["version"] | "2.4.7";
+    config.firmware.date = doc["firmware"]["date"] | "2026-07-01";
 
     // Auth
     config.auth.user = doc["auth"]["user"] | "admin";
@@ -226,8 +226,8 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.wol.targetMac = "";
     config.ntp.server = "pool.ntp.org";
     config.ntp.timezone = "KST-9";
-    config.firmware.version = "2.3.0";
-    config.firmware.date = "2026-06-10";
+    config.firmware.version = "2.4.7";
+    config.firmware.date = "2026-07-01";
     config.auth.user = "admin";
     config.auth.pass = "12345";
     // Web Request defaults (disabled)
