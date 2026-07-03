@@ -106,12 +106,16 @@ function loadSchedules() {
     d.schedules.forEach(s => {
       const days = ['일','월','화','수','목','금','토']
         .filter((_, i) => s.days & (1 << i)).join(',');
-      const actionMap = {on:'켜기', off:'끄기', toggle:'토글'};
+      const actionMap = {on:'켜기', off:'끄기', toggle:'토글', reboot:'재부팅'};
       const div = document.createElement('div');
       div.className = 'status-line';
+      // Design Ref: §5.4 — reboot은 🔁 아이콘 + relay 필드 미표시
+      const label = (s.action === 'reboot')
+        ? '🔁 ' + (actionMap[s.action] || s.action)
+        : '릴레이' + s.relay + ' ' + (actionMap[s.action] || s.action);
       div.innerHTML = '#' + s.id + ' ' +
         String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0') +
-        ' [' + days + '] 릴레이' + s.relay + ' ' + (actionMap[s.action] || s.action) +
+        ' [' + days + '] ' + label +
         (s.enabled ? ' <span style="color:#0f0">활성</span>' : ' <span style="color:#f00">비활성</span>') +
         ' <button onclick="delSchedule(' + s.id + ')" style="margin-left:8px;padding:2px 8px">삭제</button>';
       list.appendChild(div);
@@ -146,7 +150,11 @@ function addSchedule() {
 
 function delSchedule(id) {
   if (!confirm('이 스케줄을 삭제하시겠습니까?')) return;
-  fetch('/api/schedule?id=' + id, {method: 'DELETE'}).then(() => loadSchedules());
+  fetch('/api/schedule?id=' + id, {method: 'DELETE'}).then(() => {
+    loadSchedules();
+    // 관리 탭에서 삭제한 경우 재부팅 스케줄 리스트도 즉시 새로고침
+    if (typeof loadRebootSchedules === 'function') loadRebootSchedules();
+  });
 }
 
 // ═══════════════════════════════════════════
@@ -516,6 +524,36 @@ function uploadOTA() {
   xhr.send(formData);
 }
 
+// RemoteDeck_PC_v2.5 — SPIFFS(웹 UI) 업로드. 확장자에 .spiffs.bin 이나 .fs.bin 이 포함되어야
+// OTAHandler 가 U_SPIFFS 파티션으로 라우팅함.
+function uploadFS() {
+  const file = document.getElementById('fs-file').files[0];
+  if (!file) return alert('.bin 파일을 선택하세요');
+  const nameLower = file.name.toLowerCase();
+  if (!/\.(spiffs|fs)\.bin$/.test(nameLower) && !/-fs\.bin$/.test(nameLower) && !/_fs\.bin$/.test(nameLower)) {
+    if (!confirm(`선택한 파일명 "${file.name}" 이 spiffs.bin 규칙에 맞지 않습니다. 그대로 진행하면 firmware 파티션으로 flash 됩니다. 계속?`)) return;
+  }
+  if (!confirm('웹 UI 자산을 업로드하고 재부팅하시겠습니까?')) return;
+
+  const formData = new FormData();
+  formData.append('spiffs', file);   // 필드명은 서버에서 무시. 파일명이 판정 기준.
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/ota');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      document.getElementById('fs-progress').style.width = pct + '%';
+      document.getElementById('fs-pct').textContent = pct + '%';
+    }
+  };
+  xhr.onload = () => {
+    alert('웹 UI 업로드 완료! 장치가 재부팅됩니다...');
+    setTimeout(() => location.reload(), 10000);
+  };
+  xhr.send(formData);
+}
+
 // Logs
 function loadLogs() {
   fetch('/api/log').then(r => r.json()).then(d => {
@@ -538,3 +576,65 @@ function appendLogEntry(l) {
 // Auto-load config when settings tab is shown
 document.querySelector('[data-tab="settings"]').addEventListener('click', loadConfig);
 document.querySelector('[data-tab="log"]').addEventListener('click', loadLogs);
+
+// ═══════════════════════════════════════════
+//  Admin Tab — 관리 (Design Ref: §5.4)
+// ═══════════════════════════════════════════
+
+function confirmReboot() {
+  if (!confirm('기기를 지금 재부팅합니다. 계속하시겠습니까?')) return;
+  // Plan SC-1: v2.4.7 응답 flush 전 restart 정책이라 timeout/ConnectionReset은 정상
+  fetch('/api/reboot', { method: 'POST' }).catch(() => {});
+  alert('재부팅 요청 전송됨. 잠시 후 다시 접속하세요.');
+}
+
+function loadRebootSchedules() {
+  fetch('/api/schedule').then(r => r.json()).then(d => {
+    const list = document.getElementById('reboot-sched-list');
+    list.innerHTML = '';
+    const items = (d.schedules || []).filter(s => s.action === 'reboot');
+    if (items.length === 0) {
+      list.innerHTML = '<p style="color:#888">등록된 재부팅 스케줄이 없습니다</p>';
+      return;
+    }
+    items.forEach(s => {
+      const days = ['일','월','화','수','목','금','토']
+        .filter((_, i) => s.days & (1 << i)).join(',');
+      const div = document.createElement('div');
+      div.className = 'status-line';
+      div.innerHTML = '#' + s.id + ' ' +
+        String(s.hour).padStart(2,'0') + ':' + String(s.minute).padStart(2,'0') +
+        ' [' + days + '] 🔁 재부팅' +
+        (s.enabled ? ' <span style="color:#0f0">활성</span>' : ' <span style="color:#f00">비활성</span>') +
+        ' <button onclick="delSchedule(' + s.id + ')" style="margin-left:8px;padding:2px 8px">삭제</button>';
+      list.appendChild(div);
+    });
+  });
+}
+
+function addRebootSchedule() {
+  const time = document.getElementById('rb-time').value.split(':');
+  let days = 0;
+  if (document.getElementById('rb-d-sun').checked) days |= 1;
+  if (document.getElementById('rb-d-mon').checked) days |= 2;
+  if (document.getElementById('rb-d-tue').checked) days |= 4;
+  if (document.getElementById('rb-d-wed').checked) days |= 8;
+  if (document.getElementById('rb-d-thu').checked) days |= 16;
+  if (document.getElementById('rb-d-fri').checked) days |= 32;
+  if (document.getElementById('rb-d-sat').checked) days |= 64;
+  if (days === 0) { alert('요일을 하나 이상 선택하세요.'); return; }
+
+  fetch('/api/schedule', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      id: 0, enabled: true,
+      hour: parseInt(time[0]), minute: parseInt(time[1]),
+      days: days,
+      action: 'reboot',
+      relay: 0
+    })
+  }).then(() => { loadRebootSchedules(); if (typeof loadSchedules === 'function') loadSchedules(); });
+}
+
+document.querySelector('[data-tab="admin"]').addEventListener('click', loadRebootSchedules);

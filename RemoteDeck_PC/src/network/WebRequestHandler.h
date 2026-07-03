@@ -14,6 +14,15 @@ public:
     void begin(const WebRequestConfig* config, const DeviceConfig* deviceConfig);
     void fire(const char* event, int value);
 
+    // Design Ref: §5.2 — 부팅 후 1회 채널 상태 sync (best-effort)
+    struct StateReaders {
+        std::function<int()> gpio1;  // 0=LOW, 1=HIGH, -1=unavailable
+        std::function<int()> gpio2;
+        std::function<int()> gpio3;
+        std::function<int()> pcled;  // 0=OFF, 1=ON, -1=unavailable
+    };
+    void syncCurrentStates(const StateReaders& readers);
+
     using StringGetter = std::function<String()>;
     void setIPGetter(StringGetter cb) { _getIP = cb; }
     void setMACGetter(StringGetter cb) { _getMAC = cb; }

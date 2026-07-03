@@ -492,6 +492,12 @@ void setup() {
     // Schedule
     scheduleManager.begin(SCHEDULE_PATH);
     scheduleManager.setOnAction(onScheduleAction);
+    // Design Ref: §5.1 — reboot action은 별도 콜백으로 격리
+    scheduleManager.setOnReboot([]() {
+        Serial.println("Schedule: reboot triggered");
+        delay(200);
+        ESP.restart();
+    });
 
     // RS485
     rs485Handler.begin(PIN_RS485_RX, PIN_RS485_TX, RS485_BAUD);
@@ -544,6 +550,10 @@ void setup() {
         s.days = doc["days"] | 0;
         s.action = doc["action"] | "on";
         s.relay = doc["relay"] | 1;
+
+        // Design Ref: §4.2 — action 화이트리스트 + reboot은 relay 강제 0
+        if (s.action != "on" && s.action != "off" && s.action != "toggle" && s.action != "reboot") return false;
+        if (s.action == "reboot") s.relay = 0;
 
         if (s.id == 0) return scheduleManager.addSchedule(s);
         return scheduleManager.updateSchedule(s);
@@ -677,6 +687,10 @@ void startMQTTTestTask() {
     launchMQTTTestTask();
 }
 
+// Design Ref: §5.3 — 부팅 완료 후 1회 실행 one-shot flag
+static bool _bootSyncedOnce = false;
+static unsigned long _bootReadyAt = 0;
+
 void loop() {
     networkManager.loop();
     mqttHandler.loop();
@@ -686,6 +700,21 @@ void loop() {
     scheduleManager.loop();
     udpDiscovery.loop();
     webServer.ws().loop();
+
+    // Plan SC-6/7: GOT_IP + 5s stabilization 후 WebRequest 초기 sync 1회
+    if (!_bootSyncedOnce && networkManager.isConnected()) {
+        if (_bootReadyAt == 0) _bootReadyAt = millis();
+        if (millis() - _bootReadyAt >= 5000) {
+            WebRequestHandler::StateReaders readers;
+            readers.gpio1 = []() { return digitalRead(PIN_GPIO1) == HIGH ? 1 : 0; };
+            readers.gpio2 = []() { return digitalRead(PIN_GPIO2) == HIGH ? 1 : 0; };
+            readers.gpio3 = []() { return digitalRead(PIN_GPIO3) == HIGH ? 1 : 0; };
+            readers.pcled = []() { return pcMonitor.isPCOn() ? 1 : 0; };
+            webRequestHandler.syncCurrentStates(readers);
+            Serial.println("BootSync: syncCurrentStates() completed");
+            _bootSyncedOnce = true;
+        }
+    }
 
     // MQTT test: DNS resolution + task launch from main loop
     startMQTTTestTask();

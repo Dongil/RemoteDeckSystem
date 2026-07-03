@@ -50,3 +50,10 @@ input[type="checkbox"]{accent-color:#0ff}
 .test-result{margin:8px 0;font-size:12px;min-height:18px}
 .test-result.ok{color:#0f0}
 .test-result.fail{color:#f44}
+
+/* Admin card (Design Ref: §5.4) */
+.admin-card{margin-bottom:12px}
+.admin-card h3{font-size:13px;color:#aaa;margin:12px 0 8px}
+.admin-card button{margin-top:4px}
+.admin-divider{border:none;border-top:1px solid #333;margin:18px 0 6px}
+#reboot-sched-list{margin-bottom:8px;font-size:13px}

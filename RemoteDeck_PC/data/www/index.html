@@ -16,7 +16,7 @@
   <button class="tab" data-tab="control">제어</button>
   <button class="tab" data-tab="schedule">스케줄</button>
   <button class="tab" data-tab="settings">설정</button>
-  <button class="tab" data-tab="ota">펌웨어</button>
+  <button class="tab" data-tab="admin">관리</button>
   <button class="tab" data-tab="log">로그</button>
 </nav>
 
@@ -239,15 +239,50 @@
   </div>
 </section>
 
-<!-- 펌웨어 -->
-<section id="ota" class="page">
-  <div class="card">
+<!-- 관리 (Design Ref: §5.4) -->
+<section id="admin" class="page">
+  <div class="card admin-card">
+    <h2>기기 관리</h2>
+
+    <h3>즉시 재부팅</h3>
+    <button onclick="confirmReboot()">재부팅</button>
+
+    <hr class="admin-divider">
+
+    <h3>재부팅 스케줄</h3>
+    <div id="reboot-sched-list"></div>
+    <div class="form-row">
+      <label>시간: <input type="time" id="rb-time" value="03:00"></label>
+    </div>
+    <div class="form-row">
+      <label><input type="checkbox" id="rb-d-mon" checked> 월</label>
+      <label><input type="checkbox" id="rb-d-tue" checked> 화</label>
+      <label><input type="checkbox" id="rb-d-wed" checked> 수</label>
+      <label><input type="checkbox" id="rb-d-thu" checked> 목</label>
+      <label><input type="checkbox" id="rb-d-fri" checked> 금</label>
+      <label><input type="checkbox" id="rb-d-sat"> 토</label>
+      <label><input type="checkbox" id="rb-d-sun"> 일</label>
+    </div>
+    <button onclick="addRebootSchedule()">추가</button>
+  </div>
+
+  <div class="card admin-card">
     <h2>펌웨어 업데이트</h2>
     <p>현재 버전: <span id="ota-ver">--</span></p>
     <input type="file" id="ota-file" accept=".bin">
     <button onclick="uploadOTA()">업로드</button>
     <div class="progress-bar"><div id="ota-progress" class="progress-fill"></div></div>
     <span id="ota-pct">0%</span>
+    <p style="color:#888;font-size:11px;margin-top:6px">firmware.bin 을 선택하세요</p>
+  </div>
+
+  <div class="card admin-card">
+    <h2>웹 UI 업데이트</h2>
+    <p style="color:#888;font-size:12px">웹 화면(HTML/JS/CSS) 파일 교체. spiffs.bin (또는 *.fs.bin) 을 선택하세요.</p>
+    <input type="file" id="fs-file" accept=".bin">
+    <button onclick="uploadFS()">업로드</button>
+    <div class="progress-bar"><div id="fs-progress" class="progress-fill"></div></div>
+    <span id="fs-pct">0%</span>
   </div>
 </section>
 

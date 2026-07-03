@@ -36,6 +36,23 @@ void WebRequestHandler::fire(const char* event, int value) {
     }
 }
 
+// Design Ref: §5.2 — one-shot 부팅 sync. 기존 fire() 파이프라인 재사용.
+// Plan SC-6/7: URL 미설정·reader unavailable 채널은 skip, 실패해도 부팅에 영향 없음.
+void WebRequestHandler::syncCurrentStates(const StateReaders& readers) {
+    auto tryFire = [&](const std::function<int()>& reader, const char* on, const char* off) {
+        if (!reader) return;
+        int v = reader();
+        if (v < 0) return;  // unavailable
+        const char* ev = (v == 1) ? on : off;
+        fire(ev, v);  // fire()가 URL 빈 채널은 자체 skip
+        if (_onLog) _onLog("BOOT_SYNC", ev);
+    };
+    tryFire(readers.gpio1, "gpio1_high", "gpio1_low");
+    tryFire(readers.gpio2, "gpio2_high", "gpio2_low");
+    tryFire(readers.gpio3, "gpio3_high", "gpio3_low");
+    tryFire(readers.pcled, "pcled_on",   "pcled_off");
+}
+
 String WebRequestHandler::getURL(const char* event) const {
     if (strcmp(event, "relay1_on") == 0)  return String(_config->relay1_on.c_str());
     if (strcmp(event, "relay1_off") == 0) return String(_config->relay1_off.c_str());

@@ -27,6 +27,10 @@ public:
     using ActionCallback = std::function<void(uint8_t relay, const std::string& action)>;
     void setOnAction(ActionCallback cb) { _onAction = cb; }
 
+    // Design Ref: §5.1 — reboot action은 relay와 관심사 분리
+    using RebootCallback = std::function<void()>;
+    void setOnReboot(RebootCallback cb) { _onReboot = cb; }
+
     bool loadFromFile();
     bool saveToFile();
 
@@ -40,6 +44,7 @@ private:
     const char* _filePath = "/schedule.json";
     uint8_t _lastCheckedMinute = 255;
     ActionCallback _onAction = nullptr;
+    RebootCallback _onReboot = nullptr;
 
     bool shouldExecute(const Schedule& s, uint8_t weekday, uint8_t hour, uint8_t minute) const;
     uint8_t nextId() const;
