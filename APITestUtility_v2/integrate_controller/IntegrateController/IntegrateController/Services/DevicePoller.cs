@@ -9,7 +9,10 @@ public sealed class DevicePoller : IDisposable
     private readonly RemoteDeckClient _client;
     private readonly Dictionary<string, PollEntry> _entries = new(StringComparer.Ordinal);
     // device_id is fetched from /api/config once per device per session and cached.
+    // Cache is invalidated on device reboot (detected via uptime decrease) so a
+    // changed device_id becomes visible without restarting IntegrateController.
     private readonly Dictionary<string, string> _deviceIdCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _lastUptimeCache = new(StringComparer.Ordinal);
     private readonly object _lock = new();
 
     public event EventHandler<DeviceStatusUpdatedEventArgs>? StatusUpdated;
@@ -136,9 +139,17 @@ public sealed class DevicePoller : IDisposable
     // session. /api/status does not return device_id, so this is the only path.
     private async Task EnrichWithDeviceIdAsync(DeviceEntry device, DeviceStatus status, CancellationToken ct)
     {
+        // Reboot detection: if uptime decreased vs. last seen (allow 30s clock jitter),
+        // treat as a reboot and invalidate the device_id cache so a changed ID re-fetches.
         string? cached;
         lock (_lock)
         {
+            if (_lastUptimeCache.TryGetValue(device.Id, out var lastUp) &&
+                status.UptimeSec + 30 < lastUp)
+            {
+                _deviceIdCache.Remove(device.Id);
+            }
+            _lastUptimeCache[device.Id] = status.UptimeSec;
             _deviceIdCache.TryGetValue(device.Id, out cached);
         }
 
@@ -166,7 +177,11 @@ public sealed class DevicePoller : IDisposable
 
     public void InvalidateDeviceIdCache(string deviceId)
     {
-        lock (_lock) _deviceIdCache.Remove(deviceId);
+        lock (_lock)
+        {
+            _deviceIdCache.Remove(deviceId);
+            _lastUptimeCache.Remove(deviceId);
+        }
     }
 
     private void RaiseUpdated(string deviceId, DeviceStatus status)
