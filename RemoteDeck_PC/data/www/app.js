@@ -517,7 +517,9 @@ function uploadOTA() {
       document.getElementById('ota-pct').textContent = pct + '%';
     }
   };
-  xhr.onload = () => {
+  // v2.5.2: upload body 전송 완료 시점에 reload 예약. 서버가 응답 flush 전에 재부팅해도
+  // (xhr.onload가 안 뜨더라도) 브라우저는 반드시 재로드된다.
+  xhr.upload.onload = () => {
     alert('업로드 완료! 장치가 재부팅됩니다...');
     setTimeout(() => location.reload(), 10000);
   };
@@ -547,7 +549,8 @@ function uploadFS() {
       document.getElementById('fs-pct').textContent = pct + '%';
     }
   };
-  xhr.onload = () => {
+  // v2.5.2: uploadOTA와 동일 이유로 upload.onload로 이관 (응답 유실 대비)
+  xhr.upload.onload = () => {
     alert('웹 UI 업로드 완료! 장치가 재부팅됩니다...');
     setTimeout(() => location.reload(), 10000);
   };
@@ -586,6 +589,8 @@ function confirmReboot() {
   // Plan SC-1: v2.4.7 응답 flush 전 restart 정책이라 timeout/ConnectionReset은 정상
   fetch('/api/reboot', { method: 'POST' }).catch(() => {});
   alert('재부팅 요청 전송됨. 잠시 후 다시 접속하세요.');
+  // saveNetwork/rebootDevice와 동일하게 자동 리로드 (5초 대기)
+  setTimeout(() => location.reload(), 5000);
 }
 
 function loadRebootSchedules() {
