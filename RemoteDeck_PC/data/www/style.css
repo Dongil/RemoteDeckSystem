@@ -57,3 +57,38 @@ input[type="checkbox"]{accent-color:#0ff}
 .admin-card button{margin-top:4px}
 .admin-divider{border:none;border-top:1px solid #333;margin:18px 0 6px}
 #reboot-sched-list{margin-bottom:8px;font-size:13px}
+
+/* v2.6.2 — 재부재 시스템 카드 (홈) */
+.attendance-card{margin-bottom:12px;padding:16px}
+.attendance-card .att-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.attendance-card .att-header h2{border-bottom:none;padding-bottom:0}
+.attendance-card .att-source{color:#0ff;font-size:12px;background:#0f3460;padding:3px 8px;border-radius:10px}
+.attendance-card .presence-badge{display:flex;align-items:center;gap:12px;padding:14px 0 10px;border-bottom:1px solid #222;margin-bottom:10px}
+.attendance-card .presence-badge .dot{width:20px;height:20px;border-radius:50%}
+/* v2.6.2 fix-5: 색상 통일 — 재실=초록(정상/연결), 부재=빨강(비활성) */
+.attendance-card .presence-badge .dot.present{background:#4ac86e;box-shadow:0 0 10px #4ac86e99}
+.attendance-card .presence-badge .dot.absent{background:#f04a4a;box-shadow:0 0 10px #f04a4a99}
+.attendance-card .presence-badge .text{font-size:22px;font-weight:bold;color:#e0e0e0}
+.att-hist-title{font-size:13px;color:#aaa;margin:0 0 6px}
+.att-history{font-size:13px}
+.att-history .att-row{display:grid;grid-template-columns:100px 60px 1fr;gap:8px;padding:4px 0;border-bottom:1px solid #1a1a2e}
+.att-history .att-row:last-child{border-bottom:none}
+.att-history .time{color:#888}
+.att-history .state{font-weight:bold}
+.att-history .state.present{color:#4ac86e}
+.att-history .state.absent{color:#f04a4a}
+.att-history .tx.ok{color:#4ac86e}
+.att-history .tx.fail{color:#f04a4a}
+.att-history .tx.pending{color:#aaa}
+/* v2.6.2 fix-5: 일반 상태 클래스 (MQTT/네트워크 등) */
+.st-ok{color:#4ac86e}
+.st-fail{color:#f04a4a}
+.att-history .att-empty{color:#666;font-style:italic}
+
+/* v2.6.2 — 상태 모니터 PC LED dot/강조 */
+.pc-led-line{display:flex;align-items:center;gap:8px}
+.pc-led-line .lbl{font-weight:bold;font-size:15px}
+.pc-led-line .pc-led-value{font-weight:bold;font-size:15px}
+.led-dot{width:14px;height:14px;border-radius:50%;display:inline-block}
+.led-dot.on{background:#4ac86e;box-shadow:0 0 6px #4ac86e88}
+.led-dot.off{background:#f04a4a;box-shadow:0 0 6px #f04a4a88}

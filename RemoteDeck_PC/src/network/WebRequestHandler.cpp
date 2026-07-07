@@ -24,6 +24,7 @@ void WebRequestHandler::fire(const char* event, int value) {
 
     RequestItem item{};
     strlcpy(item.url, url.c_str(), sizeof(item.url));
+    strlcpy(item.event, event, sizeof(item.event));   // v2.6.2 fix-1: 결과 콜백 라우팅용
     item.timeoutMs = _config->timeoutMs;
 
     if (xQueueSend(_queue, &item, 0) != pdTRUE) {
@@ -105,6 +106,7 @@ void WebRequestHandler::workerLoop() {
                 snprintf(detail, sizeof(detail), "BEGIN FAIL %s", item.url);
                 _onLog("WEBREQ", detail);
             }
+            if (_onResult) _onResult(item.event, -2);   // v2.6.2 fix-1: begin fail
             continue;
         }
 
@@ -119,6 +121,8 @@ void WebRequestHandler::workerLoop() {
             snprintf(detail, sizeof(detail), "[%d] %s", code, item.url);
             _onLog("WEBREQ", detail);
         }
+        // v2.6.2 fix-1: 이벤트별 결과 전파 (attendance 등 결과 반영용)
+        if (_onResult) _onResult(item.event, code);
         http.end();
     }
 }

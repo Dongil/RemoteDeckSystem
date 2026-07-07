@@ -22,15 +22,32 @@
 
 <!-- 홈 -->
 <section id="home" class="page active">
+  <!-- v2.6.2: 재부재 시스템 카드 (attendance.enabled 시 표시) -->
+  <div class="card attendance-card" id="attendance-card" style="display:none">
+    <div class="att-header">
+      <h2>🚪 재부재 시스템</h2>
+      <span class="att-source" id="att-source-badge">--</span>
+    </div>
+    <div class="presence-badge">
+      <span class="dot" id="att-dot"></span>
+      <span class="text" id="att-text">--</span>
+    </div>
+    <h3 class="att-hist-title">최근 전송 내역</h3>
+    <div class="att-history" id="att-history">
+      <p class="att-empty">아직 기록이 없습니다</p>
+    </div>
+  </div>
+
   <div class="card-row">
     <div class="card">
-      <h2>PC 상태</h2>
-      <div class="status-indicator" id="pc-status">
-        <span class="dot" id="pc-dot"></span>
-        <span id="pc-text">--</span>
-      </div>
+      <h2>상태 모니터</h2>
       <div class="status-line">릴레이1: <span id="r1">--</span></div>
       <div class="status-line">릴레이2: <span id="r2">--</span></div>
+      <div class="status-line pc-led-line">
+        <span class="lbl">PC LED :</span>
+        <span class="pc-led-value" id="pc-text">--</span>
+        <span class="led-dot" id="pc-dot"></span>
+      </div>
       <div class="status-line">GPIO: <span id="gpio-val">--</span></div>
     </div>
     <div class="card">

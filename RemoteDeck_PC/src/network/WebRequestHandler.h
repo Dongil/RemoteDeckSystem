@@ -30,18 +30,24 @@ public:
     using LogCallback = std::function<void(const char* event, const char* detail)>;
     void setLogger(LogCallback cb) { _onLog = cb; }
 
+    // v2.6.2 fix-1: 이벤트별 HTTP 결과 콜백 (event 이름 + httpCode)
+    using ResultCallback = std::function<void(const char* event, int httpCode)>;
+    void setResultCallback(ResultCallback cb) { _onResult = cb; }
+
 private:
     const WebRequestConfig* _config = nullptr;
     const DeviceConfig* _deviceConfig = nullptr;
     StringGetter _getIP = nullptr;
     StringGetter _getMAC = nullptr;
     LogCallback _onLog = nullptr;
+    ResultCallback _onResult = nullptr;
 
     QueueHandle_t _queue = nullptr;
     TaskHandle_t _task = nullptr;
 
     struct RequestItem {
         char url[256];
+        char event[24];      // v2.6.2 fix-1: 결과 콜백 라우팅용
         uint16_t timeoutMs;
     };
     static constexpr size_t QUEUE_LEN = 8;

@@ -43,10 +43,11 @@ connectWS();
 
 // Dashboard update
 function updateDashboard(d) {
+  // v2.6.2: PC LED — 큰 폰트 + on/off dot 색상 (initial 이미지 스타일)
   const dot = document.getElementById('pc-dot');
   const txt = document.getElementById('pc-text');
-  dot.className = 'dot ' + (d.pc_on ? 'on' : 'off');
-  txt.textContent = 'PC: ' + (d.pc_on ? 'ON' : 'OFF');
+  dot.className = 'led-dot ' + (d.pc_on ? 'on' : 'off');
+  txt.textContent = d.pc_on ? 'ON' : 'OFF';
 
   document.getElementById('r1').textContent = d.relay1 ? 'ON' : 'OFF';
   document.getElementById('r2').textContent = d.relay2 ? 'ON' : 'OFF';
@@ -56,8 +57,12 @@ function updateDashboard(d) {
     const h = Math.floor(d.uptime / 3600);
     const m = Math.floor((d.uptime % 3600) / 60);
     document.getElementById('uptime').textContent = h + '시간 ' + m + '분';
+    window.__uptimeSec = d.uptime;
   }
-  document.getElementById('mqtt-st').textContent = d.mqtt_connected ? '연결됨' : '연결 안됨';
+  // v2.6.2 fix-5: MQTT 상태 색상 통일 (연결=초록, 연결안됨=빨강)
+  const mqttEl = document.getElementById('mqtt-st');
+  mqttEl.textContent = d.mqtt_connected ? '연결됨' : '연결 안됨';
+  mqttEl.className = d.mqtt_connected ? 'st-ok' : 'st-fail';
   document.getElementById('ntp-time').textContent = d.time || '--';
   document.getElementById('fw-ver').textContent = 'v' + (d.fw_ver || '--');
   document.getElementById('ota-ver').textContent = d.fw_ver || '--';
@@ -66,7 +71,64 @@ function updateDashboard(d) {
     document.getElementById('device-name-header').textContent = d.device_name;
   }
   if (d.ip) document.getElementById('dev-id').textContent = d.ip;
+
+  // v2.6.2: attendance 카드 조건부 표시 및 상태 갱신
+  const card = document.getElementById('attendance-card');
+  if (card) {
+    if (d.attendance && d.attendance.enabled) {
+      card.style.display = '';
+      const src = d.attendance.source === 'gpio2' ? 'SwitchMonitor (GPIO2)' : 'PC LED (PIR)';
+      document.getElementById('att-source-badge').textContent = src;
+      const present = d.attendance.current === 'present';
+      document.getElementById('att-dot').className = present ? 'dot present' : 'dot absent';
+      document.getElementById('att-text').textContent = present ? '재실' : '부재';
+    } else {
+      card.style.display = 'none';
+    }
+  }
 }
+
+// v2.6.2: attendance 전송 이력 (5s 폴링)
+// fix-2/4: O/X 아이콘, 시분초 시각 (device NTP time 사용)
+function loadAttendanceHistory() {
+  const card = document.getElementById('attendance-card');
+  if (!card || card.style.display === 'none') return;
+  fetch('/api/attendance/history').then(r => r.json()).then(d => {
+    const box = document.getElementById('att-history');
+    if (!box) return;
+    if (!d.history || d.history.length === 0) {
+      box.innerHTML = '<p class="att-empty">아직 기록이 없습니다</p>';
+      return;
+    }
+    // v2.6.2 fix-7: 최근 5건만 표시 (링버퍼는 서버에서 8건 유지, 외부 API 완전성)
+    box.innerHTML = d.history.slice(0, 5).map(e => {
+      // v2.6.2 fix-4: device NTP 시각 표시 (time 필드). 없으면 상대 uptime fallback.
+      let timeLabel = e.time && e.time.length > 0 ? e.time : '';
+      if (!timeLabel) {
+        const upSec = (window.__uptimeSec || 0);
+        const ago = Math.max(0, upSec - Math.floor(e.ts / 1000));
+        timeLabel = ago + '초 전';
+      }
+      const stCls = e.active ? 'present' : 'absent';
+      const stTxt = e.active ? '재실' : '부재';
+      // v2.6.2 fix-2/3: O/X 아이콘 + 실제 HTTP 결과 반영
+      let tx;
+      if (e.http === 200) {
+        tx = '<span class="tx ok"><b>O</b> 전송성공</span>';
+      } else if (e.http === -1) {
+        tx = '<span class="tx pending">⏳ 전송중</span>';
+      } else {
+        // -2 begin fail / -11 timeout / 4xx/5xx 등 모두 실패
+        tx = '<span class="tx fail"><b>X</b> 전송실패 (' + e.http + ')</span>';
+      }
+      return '<div class="att-row"><span class="time">' + timeLabel + '</span>'
+           + '<span class="state ' + stCls + '">' + stTxt + '</span>'
+           + tx + '</div>';
+    }).join('');
+  }).catch(() => {});
+}
+setInterval(loadAttendanceHistory, 5000);
+document.querySelector('[data-tab="home"]').addEventListener('click', loadAttendanceHistory);
 
 // Initial load
 fetch('/api/status').then(r => r.json()).then(d => {
@@ -547,7 +609,9 @@ function uploadFS() {
   const file = document.getElementById('fs-file').files[0];
   if (!file) return alert('.bin 파일을 선택하세요');
   const nameLower = file.name.toLowerCase();
-  if (!/\.(spiffs|fs)\.bin$/.test(nameLower) && !/-fs\.bin$/.test(nameLower) && !/_fs\.bin$/.test(nameLower)) {
+  // v2.6.2 fix-6: 서버 OTAHandler(indexOf substring)와 동일한 substring 검사.
+  // "spiffs" | "_fs." | "-fs." | ".fs." 가 파일명 어디에라도 있으면 SPIFFS로 라우팅됨.
+  if (!/spiffs|_fs\.|-fs\.|\.fs\./.test(nameLower)) {
     if (!confirm(`선택한 파일명 "${file.name}" 이 spiffs.bin 규칙에 맞지 않습니다. 그대로 진행하면 firmware 파티션으로 flash 됩니다. 계속?`)) return;
   }
   if (!confirm('웹 UI 자산을 업로드하고 재부팅하시겠습니까?')) return;

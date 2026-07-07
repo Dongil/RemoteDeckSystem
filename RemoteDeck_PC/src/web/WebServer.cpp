@@ -101,6 +101,13 @@ void WebServer::setupAPI() {
         else req->send(200, "application/json", "{\"logs\":[]}");
     });
 
+    // v2.6.2 §4.2 — GET /api/attendance/history (AttendanceHandler.toJson)
+    _server->on("/api/attendance/history", HTTP_GET, [this](AsyncWebServerRequest* req) {
+        if (!requireAuth(req)) return;
+        if (_getAttendance) req->send(200, "application/json", _getAttendance());
+        else req->send(200, "application/json", "{\"enabled\":false,\"history\":[]}");
+    });
+
     // POST /api/config (auth required)
     _server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {},
         NULL,

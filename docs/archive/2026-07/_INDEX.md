@@ -7,11 +7,15 @@
 | [RemoteDeck_PC_v2.5](RemoteDeck_PC_v2.5/) | Completed (필드 14대 배포) | v2.5.1 fw + v2.5.2 SPIFFS | 99.2% | 2026-07-05 |
 | [RemoteDeck_PC_v2.6](RemoteDeck_PC_v2.6/) | Completed (GPIO2 접점 감지) | v2.6.0 fw | 100% | 2026-07-06 |
 | [RemoteDeck_PC_v2.6.1](RemoteDeck_PC_v2.6.1/) | Completed (재부재 카드 UI) | v2.6.1 fw + v2.6.1 SPIFFS | 100% | 2026-07-06 |
+| [RemoteDeck_PC_v2.6.2](RemoteDeck_PC_v2.6.2/) | Completed (홈 모니터링 + API) | v2.6.2 fw + v2.6.2 SPIFFS | 100% | 2026-07-06 |
 
 ## Summaries
 
 ### RemoteDeck_PC_LAN_Recovery
 콜드 부팅 시 LAN 미연결 문제. 8회 펌웨어 iteration (v2.4.0 → v2.4.7) 후 필드 재검증으로 **실제 원인은 아답터 불안정 전류 입력**임을 확정. 문제 보드에 **정상 아답터 교체하는 것만으로 해결**. v2.4.7 펌웨어는 미검증 개입(brownout disable, MAC stagger, NVS 추적) 모두 제거하고 최소 방어선(pre-init delay 500ms, W5500 SW reset, ETH.begin retry 3회, GOT_IP watchdog 20s)만 유지한 상태로 정식 마감. 보드 보완(EN 핀 1uF 콘덴서 등 전원 안정화)은 향후 개정판으로 이관 — 즉시 조치 불필요.
+
+### RemoteDeck_PC_v2.6.2
+v2.6.1 재부재 설정 UX 이후 감시·통합 표면 정비. 홈 최상단 조건부 `재부재 시스템` 카드(센서 뱃지·현재 상태 대형 뱃지·최근 이력 5건) 신규. AttendanceHandler에 링버퍼[8]+toJson+syncOnBoot+StateGetters+Logger 브릿지+onFireResult 확장. `/api/attendance/history` 엔드포인트 신규. `/api/status`에 attendance 미니 블록(외부 API). switchMonitor.onChange broadcastStatus 강화(GPIO2 실시간). 상태 모니터 카드 개편(이름·순서·PC LED dot, 첨부 이미지 준수). 색상 규칙 통일(재실=ON=성공=연결=초록, 부재=OFF=실패=연결안됨=빨강). 시분초 시각 표시(Entry.timeStr[16]), O/X 아이콘 성공/실패 구분, uploadFS 규칙을 서버 substring 매칭과 통일. WebRequestHandler에 이벤트별 result 콜백 인프라 확립(향후 재사용 가능). NetManager diff=0. matchRate 100%, SC 12/12 met. 사용자 fix 라운드 2회(총 7건) in-session 반영.
 
 ### RemoteDeck_PC_v2.6.1
 v2.6에서 확보된 두 감지 채널(PIR/스위치)의 재부재 연동을 설치 운영자가 채널명 지식 없이 카드 하나로 완결하도록 UX 통합. 설정 > 기타 탭 하단에 `재부재 시스템` 카드 신규 (☑️ 활성 + 소스 select(pcled/gpio2) + ON/OFF URL 2개). 얕은 AttendanceHandler(stateless dispatcher)가 소스 콜백을 받아 attendance_on/off WebRequest 이벤트 fire. 기존 Web Request 탭 개별 URL은 그대로 유지(이중 발화 정책). DeviceConfig에 AttendanceConfig 블록 신규, /deviceconfig.json 하위호환 유지(기존 14대 무영향). NetManager 방어선 diff=0. matchRate 100%, SC 10/10 met. Firmware v2.6.1 + SPIFFS v2.6.1.

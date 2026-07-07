@@ -328,6 +328,12 @@ String buildStatusJson() {
     doc["heap_free"] = ESP.getFreeHeap();
     doc["heap_min"] = ESP.getMinFreeHeap();
 
+    // Design Ref: v2.6.2 §3.4 — attendance mini block (외부 API 조회 지원)
+    JsonObject att = doc.createNestedObject("attendance");
+    att["enabled"] = config.attendance.enabled;
+    att["source"]  = config.attendance.source;
+    att["current"] = attendanceHandler.currentStateText();
+
     String output;
     serializeJson(doc, output);
     return output;
@@ -480,6 +486,8 @@ void setup() {
         webRequestHandler.fire(active ? "gpio2_low" : "gpio2_high", active ? 1 : 0);
         // Design Ref: v2.6.1 §5.4 — Attendance dispatcher (config match 시에만 fire)
         attendanceHandler.onSourceStateChange("gpio2", active);
+        // Design Ref: v2.6.2 §5.3 — GPIO2 실시간 반영: WebSocket status broadcast (Plan SC-6)
+        webServer.ws().broadcastStatus(buildStatusJson().c_str());
     });
 
     pinMode(PIN_GPIO1, INPUT);
@@ -552,6 +560,19 @@ void setup() {
 
     // Design Ref: RemoteDeck_PC_v2.6.1 §5.4 — Attendance dispatcher wiring
     attendanceHandler.begin(&config.attendance, &webRequestHandler);
+    // Design Ref: v2.6.2 §5.3 — state getters for /api/status current + syncOnBoot
+    attendanceHandler.setStateGetters(
+        []() { return pcMonitor.isPCOn(); },
+        []() { return switchMonitor.isActive(); }
+    );
+    // v2.6.2 fix-3: NTP 시각 getter (Entry.timeStr 저장용, HH:MM:SS)
+    attendanceHandler.setTimeGetter([]() { return String(ntpSync.getTimeString().c_str()); });
+    // v2.6.2 fix-3: Logger 브릿지 (재부재 상태 변경을 시스템 로그에도 기록)
+    attendanceHandler.setLoggerBridge([](const char* cat, const char* det) { logger.log(cat, det); });
+    // v2.6.2 fix-3: WebRequestHandler fire 결과를 링버퍼 httpCode에 반영
+    webRequestHandler.setResultCallback([](const char* event, int code) {
+        attendanceHandler.onFireResult(event, code);
+    });
     webRequestHandler.setIPGetter([]() -> String {
         return networkManager.localIP().toString();
     });
@@ -604,6 +625,8 @@ void setup() {
         ESP.restart();
     });
     webServer.setLogGetter([]() { return logger.toJson(); });
+    // Design Ref: v2.6.2 §5.2 — /api/attendance/history endpoint
+    webServer.setAttendanceGetter([]() { return attendanceHandler.toJson(); });
     webServer.setAuthChanger([](const String& curPass, const String& newUser, const String& newPass) {
         if (curPass != String(config.auth.pass.c_str())) return false;
         config.auth.user = newUser.c_str();
@@ -747,7 +770,9 @@ void loop() {
             readers.gpio3 = []() { return digitalRead(PIN_GPIO3) == HIGH ? 1 : 0; };
             readers.pcled = []() { return pcMonitor.isPCOn() ? 1 : 0; };
             webRequestHandler.syncCurrentStates(readers);
-            Serial.println("BootSync: syncCurrentStates() completed");
+            // Design Ref: v2.6.2 §5.3 — attendance 부팅 초기 상태 fire (Plan SC-7)
+            attendanceHandler.syncOnBoot();
+            Serial.println("BootSync: syncCurrentStates() + attendanceSync() completed");
             _bootSyncedOnce = true;
         }
     }
