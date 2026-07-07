@@ -10,6 +10,7 @@
 
 #include "control/RelayController.h"
 #include "control/PCMonitor.h"
+#include "control/SwitchMonitor.h"
 #include "control/ScheduleManager.h"
 #include "control/WOLSender.h"
 
@@ -40,6 +41,7 @@ MQTTTestState mqttTestState = {{}, IPAddress(), 0, {}, {}, 2};
 DeviceConfig config;
 RelayController relayController;
 PCMonitor pcMonitor;
+SwitchMonitor switchMonitor;
 ScheduleManager scheduleManager;
 WOLSender wolSender;
 NetManager networkManager;
@@ -450,8 +452,16 @@ void setup() {
     pcMonitor.setPollInterval(config.monitor.pcledPollMs);
     pcMonitor.setAutoNotify(config.monitor.autoNotify);
 
+    // Design Ref: RemoteDeck_PC_v2.6 §5.3 — GPIO2 접점(광커플러) 상태 감지.
+    // pcled와 동일 poll 주기 재사용. LOW=active → fire("gpio2_low"), HIGH → fire("gpio2_high").
+    switchMonitor.begin(PIN_GPIO2);
+    switchMonitor.setPollInterval(config.monitor.pcledPollMs);
+    switchMonitor.setOnChange([](bool active) {
+        webRequestHandler.fire(active ? "gpio2_low" : "gpio2_high", active ? 1 : 0);
+    });
+
     pinMode(PIN_GPIO1, INPUT);
-    pinMode(PIN_GPIO2, INPUT);
+    // Design Ref: §5.3 — PIN_GPIO2는 SwitchMonitor.begin()에서 INPUT_PULLUP 설정
     pinMode(PIN_GPIO3, INPUT);
 
     // Network v2.1: single mode (ethernet OR wifi STA), non-blocking
@@ -697,6 +707,7 @@ void loop() {
     rs485Handler.loop();
     relayController.loop();
     pcMonitor.loop();
+    switchMonitor.loop();
     scheduleManager.loop();
     udpDiscovery.loop();
     webServer.ws().loop();
