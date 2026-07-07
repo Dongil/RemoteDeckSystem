@@ -14,6 +14,7 @@ public partial class MainForm : Form
     // RemoteDeck_PC_v2.5 §5.5 — Log poller mirrors DevicePoller pattern.
     private readonly LogPoller _logPoller;
     private ListView _logList = null!;
+    private ColumnHeader _colLogDate = null!;
     private ColumnHeader _colLogTime = null!;
     private ColumnHeader _colLogEvent = null!;
     private ColumnHeader _colLogDetail = null!;
@@ -331,7 +332,9 @@ public partial class MainForm : Form
             var logs = _logPoller.GetLogs(d.Id, 100);   // Design §12: 표시 100건
             foreach (var l in logs)
             {
-                var item = new ListViewItem(string.IsNullOrEmpty(l.TimeStr) ? l.Timestamp.ToString() : l.TimeStr);
+                // v2.6.3: 날짜 = client 수신 시각. 시간 = device NTP TimeStr (HH:MM:SS).
+                var item = new ListViewItem(l.ReceivedAt.ToString("yyyy-MM-dd"));
+                item.SubItems.Add(string.IsNullOrEmpty(l.TimeStr) ? l.Timestamp.ToString() : l.TimeStr);
                 item.SubItems.Add(l.EventStr);
                 item.SubItems.Add(l.Detail);
                 _logList.Items.Add(item);
@@ -376,6 +379,7 @@ public partial class MainForm : Form
                 row.Cells[ColDeviceName.Index].Value = "-";
                 row.Cells[ColDeviceId.Index].Value = "-";
                 row.Cells[_colIp.Index].Value = d.Ip;
+                row.Cells[ColAttendance.Index].Value = StatusFormatter.FormatAttendance(null);
                 row.Cells[ColPc.Index].Value = StatusFormatter.FormatPc(null);
                 row.Cells[ColGpio.Index].Value = StatusFormatter.FormatGpio(null);
                 row.Cells[ColFw.Index].Value = StatusFormatter.FormatFw(null);
@@ -397,6 +401,7 @@ public partial class MainForm : Form
         row.Cells[ColDeviceName.Index].Value = string.IsNullOrEmpty(status.DeviceName) ? "-" : status.DeviceName;
         row.Cells[ColDeviceId.Index].Value = string.IsNullOrEmpty(status.DeviceId) ? "-" : status.DeviceId;
         row.Cells[_colIp.Index].Value = d.Ip;
+        row.Cells[ColAttendance.Index].Value = StatusFormatter.FormatAttendance(status);
         row.Cells[ColPc.Index].Value = StatusFormatter.FormatPc(status);
         row.Cells[ColGpio.Index].Value = StatusFormatter.FormatGpio(status);
         row.Cells[ColFw.Index].Value = StatusFormatter.FormatFw(status);
@@ -535,9 +540,10 @@ public partial class MainForm : Form
     // Kept entirely in code (never in Designer) so VS regeneration cannot drop it.
     private void AddLogView()
     {
-        _colLogTime   = new ColumnHeader { Text = "시간", Width = 130 };
+        _colLogDate   = new ColumnHeader { Text = "날짜",   Width = 90 };   // v2.6.3
+        _colLogTime   = new ColumnHeader { Text = "시간",   Width = 80 };
         _colLogEvent  = new ColumnHeader { Text = "이벤트", Width = 80 };
-        _colLogDetail = new ColumnHeader { Text = "상세", Width = 500 };
+        _colLogDetail = new ColumnHeader { Text = "상세",   Width = 500 };
 
         _logList = new ListView
         {
@@ -548,7 +554,7 @@ public partial class MainForm : Form
             HeaderStyle = ColumnHeaderStyle.Nonclickable,
             Font = new System.Drawing.Font("Consolas", 9F),
         };
-        _logList.Columns.AddRange(new[] { _colLogTime, _colLogEvent, _colLogDetail });
+        _logList.Columns.AddRange(new[] { _colLogDate, _colLogTime, _colLogEvent, _colLogDetail });
 
         var detailSplit = new SplitContainer
         {

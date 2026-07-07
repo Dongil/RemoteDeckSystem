@@ -48,6 +48,7 @@ partial class MainForm
 		ColStatus = new DataGridViewTextBoxColumn();
 		ColDeviceName = new DataGridViewTextBoxColumn();
 		ColDeviceId = new DataGridViewTextBoxColumn();
+		ColAttendance = new DataGridViewTextBoxColumn();
 		ColPc = new DataGridViewTextBoxColumn();
 		ColGpio = new DataGridViewTextBoxColumn();
 		ColFw = new DataGridViewTextBoxColumn();
@@ -161,7 +162,7 @@ partial class MainForm
 		grid.AllowUserToResizeRows = false;
 		grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 		grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-		grid.Columns.AddRange(new DataGridViewColumn[] { ColNo, ColStatus, ColDeviceName, ColDeviceId, ColPc, ColGpio, ColFw, ColUptime, ColLastSeen });
+		grid.Columns.AddRange(new DataGridViewColumn[] { ColNo, ColStatus, ColDeviceName, ColDeviceId, ColAttendance, ColPc, ColGpio, ColFw, ColUptime, ColLastSeen });
 		grid.Dock = DockStyle.Fill;
 		grid.Location = new Point(0, 0);
 		grid.MultiSelect = false;
@@ -204,8 +205,15 @@ partial class MainForm
 		ColDeviceId.Name = "ColDeviceId";
 		ColDeviceId.ReadOnly = true;
 		// 
+		// ColAttendance (v2.6.3: RemoteDeck_PC v2.6.2 attendance)
+		//
+		ColAttendance.FillWeight = 12F;
+		ColAttendance.HeaderText = "재부재";
+		ColAttendance.Name = "ColAttendance";
+		ColAttendance.ReadOnly = true;
+		//
 		// ColPc
-		// 
+		//
 		ColPc.FillWeight = 12F;
 		ColPc.HeaderText = "PC";
 		ColPc.Name = "ColPc";
@@ -356,6 +364,7 @@ partial class MainForm
     private System.Windows.Forms.DataGridViewTextBoxColumn ColStatus;
     private System.Windows.Forms.DataGridViewTextBoxColumn ColDeviceName;
     private System.Windows.Forms.DataGridViewTextBoxColumn ColDeviceId;
+    private System.Windows.Forms.DataGridViewTextBoxColumn ColAttendance;
     private System.Windows.Forms.DataGridViewTextBoxColumn ColPc;
     private System.Windows.Forms.DataGridViewTextBoxColumn ColGpio;
     private System.Windows.Forms.DataGridViewTextBoxColumn ColFw;

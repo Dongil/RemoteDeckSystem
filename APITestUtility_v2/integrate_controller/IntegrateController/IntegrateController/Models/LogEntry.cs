@@ -5,10 +5,13 @@ namespace IntegrateController.Models;
 
 public sealed record LogEntry(
     long   Timestamp,   // ms since RD_PC boot (from Logger.toJson field "timestamp")
-    string TimeStr,     // NTP-formatted time string ("time" field, may be empty)
+    string TimeStr,     // NTP-formatted time string HH:MM:SS ("time" field, may be empty)
     string EventStr,    // "BOOT" / "RELAY" / "WEBREQ" / "MQTT" / ...
     string Detail
 )
 {
+    // v2.6.3: device Logger는 HH:MM:SS만 저장 (no date). 클라이언트 수신 시각을 날짜 컬럼용으로 기록.
+    public DateTime ReceivedAt { get; init; } = DateTime.Now;
+
     public string DedupKey => $"{Timestamp}|{EventStr}|{Detail}";
 }

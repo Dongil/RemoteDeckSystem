@@ -49,6 +49,21 @@ internal static class StatusFormatter
 
     public static string FormatBool(bool b) => b ? "ON" : "OFF";
     public static string FormatPc(DeviceStatus? s) => s == null ? "?" : (s.PcOn ? "ON" : "OFF");
+
+    // v2.6.3: RemoteDeck_PC v2.6.2 /api/status.attendance 렌더링
+    //   enabled=false → 미설정
+    //   current=present → 재실 / absent → 부재 / unknown → 미설정
+    public static string FormatAttendance(DeviceStatus? s)
+    {
+        if (s == null) return "-";
+        if (!s.AttendanceEnabled) return "미설정";
+        return s.AttendanceCurrent switch
+        {
+            "present" => "재실",
+            "absent"  => "부재",
+            _          => "미설정",
+        };
+    }
     public static string FormatGpio(DeviceStatus? s) => s == null ? "---" : s.GpioString;
     public static string FormatUptime(DeviceStatus? s) => s == null ? "-" : s.UptimeFormatted;
     public static string FormatFw(DeviceStatus? s) => s == null || string.IsNullOrEmpty(s.FwVer) ? "-" : s.FwVer;
