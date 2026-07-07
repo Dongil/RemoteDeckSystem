@@ -6,11 +6,15 @@
 | idle-legacy (15 features) | Cleanup | — | — | 2026-07-03 |
 | [RemoteDeck_PC_v2.5](RemoteDeck_PC_v2.5/) | Completed (필드 14대 배포) | v2.5.1 fw + v2.5.2 SPIFFS | 99.2% | 2026-07-05 |
 | [RemoteDeck_PC_v2.6](RemoteDeck_PC_v2.6/) | Completed (GPIO2 접점 감지) | v2.6.0 fw | 100% | 2026-07-06 |
+| [RemoteDeck_PC_v2.6.1](RemoteDeck_PC_v2.6.1/) | Completed (재부재 카드 UI) | v2.6.1 fw + v2.6.1 SPIFFS | 100% | 2026-07-06 |
 
 ## Summaries
 
 ### RemoteDeck_PC_LAN_Recovery
 콜드 부팅 시 LAN 미연결 문제. 8회 펌웨어 iteration (v2.4.0 → v2.4.7) 후 필드 재검증으로 **실제 원인은 아답터 불안정 전류 입력**임을 확정. 문제 보드에 **정상 아답터 교체하는 것만으로 해결**. v2.4.7 펌웨어는 미검증 개입(brownout disable, MAC stagger, NVS 추적) 모두 제거하고 최소 방어선(pre-init delay 500ms, W5500 SW reset, ETH.begin retry 3회, GOT_IP watchdog 20s)만 유지한 상태로 정식 마감. 보드 보완(EN 핀 1uF 콘덴서 등 전원 안정화)은 향후 개정판으로 이관 — 즉시 조치 불필요.
+
+### RemoteDeck_PC_v2.6.1
+v2.6에서 확보된 두 감지 채널(PIR/스위치)의 재부재 연동을 설치 운영자가 채널명 지식 없이 카드 하나로 완결하도록 UX 통합. 설정 > 기타 탭 하단에 `재부재 시스템` 카드 신규 (☑️ 활성 + 소스 select(pcled/gpio2) + ON/OFF URL 2개). 얕은 AttendanceHandler(stateless dispatcher)가 소스 콜백을 받아 attendance_on/off WebRequest 이벤트 fire. 기존 Web Request 탭 개별 URL은 그대로 유지(이중 발화 정책). DeviceConfig에 AttendanceConfig 블록 신규, /deviceconfig.json 하위호환 유지(기존 14대 무영향). NetManager 방어선 diff=0. matchRate 100%, SC 10/10 met. Firmware v2.6.1 + SPIFFS v2.6.1.
 
 ### RemoteDeck_PC_v2.6
 GPIO2 상태 변화 자동 fire 활성화. `pinMode(INPUT)→INPUT_PULLUP` + SwitchMonitor 클래스(PCMonitor 미러) 신규. 상태 전이 시 기존 `gpio2_high`/`gpio2_low` WebRequest 이벤트 발화. 신규 이벤트/URL/UI/스키마 0 — 기존 자산 100% 재사용. 조명 스위치→광커플러→GPIO2 접점(GND) 배선을 통한 재부재 판정 신호가 첫 사용 사례. NetManager 방어선 diff=0. matchRate 100%, SC 10/10 met. 코드 diff ~76 LOC (신규 SwitchMonitor.{h,cpp} + main.cpp wiring + 버전 스탬프). SPIFFS 무변경 (v2.5.2 그대로 사용).

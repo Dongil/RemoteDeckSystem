@@ -231,6 +231,12 @@ function loadConfig() {
     document.getElementById('cfg-wol-mac').value = d.wol?.target_mac || '';
     document.getElementById('cfg-ntp-server').value = d.ntp?.server || '';
     document.getElementById('cfg-ntp-tz').value = d.ntp?.timezone || '';
+
+    // v2.6.1 재부재 시스템
+    document.getElementById('cfg-att-enabled').checked = d.attendance?.enabled || false;
+    document.getElementById('cfg-att-source').value = d.attendance?.source || 'pcled';
+    document.getElementById('cfg-att-on').value = d.web_request?.attendance_on || '';
+    document.getElementById('cfg-att-off').value = d.web_request?.attendance_off || '';
   });
 }
 
@@ -413,6 +419,15 @@ function saveEtc() {
     ntp: {
       server: document.getElementById('cfg-ntp-server').value,
       timezone: document.getElementById('cfg-ntp-tz').value
+    },
+    // v2.6.1 재부재 시스템
+    attendance: {
+      enabled: document.getElementById('cfg-att-enabled').checked,
+      source: document.getElementById('cfg-att-source').value
+    },
+    web_request: {
+      attendance_on: document.getElementById('cfg-att-on').value,
+      attendance_off: document.getElementById('cfg-att-off').value
     }
   };
   fetch('/api/config', {

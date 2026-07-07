@@ -11,6 +11,7 @@
 #include "control/RelayController.h"
 #include "control/PCMonitor.h"
 #include "control/SwitchMonitor.h"
+#include "control/AttendanceHandler.h"
 #include "control/ScheduleManager.h"
 #include "control/WOLSender.h"
 
@@ -42,6 +43,7 @@ DeviceConfig config;
 RelayController relayController;
 PCMonitor pcMonitor;
 SwitchMonitor switchMonitor;
+AttendanceHandler attendanceHandler;
 ScheduleManager scheduleManager;
 WOLSender wolSender;
 NetManager networkManager;
@@ -157,6 +159,8 @@ void onPCStateChange(bool pcOn) {
     publishEvent(buildPCLedEvent());
     webServer.ws().broadcastStatus(buildStatusJson().c_str());
     webRequestHandler.fire(pcOn ? "pcled_on" : "pcled_off", pcOn ? 1 : 0);
+    // Design Ref: v2.6.1 §5.4 — Attendance dispatcher (config match 시에만 fire)
+    attendanceHandler.onSourceStateChange("pcled", pcOn);
 }
 
 void onScheduleAction(uint8_t relay, const std::string& action) {
@@ -243,6 +247,15 @@ bool onUDPConfig(const char* jsonConfig) {
         if (wr.containsKey("gpio2_low"))   config.webRequest.gpio2_low = wr["gpio2_low"].as<std::string>();
         if (wr.containsKey("gpio3_high"))  config.webRequest.gpio3_high = wr["gpio3_high"].as<std::string>();
         if (wr.containsKey("gpio3_low"))   config.webRequest.gpio3_low = wr["gpio3_low"].as<std::string>();
+        // Design Ref: v2.6.1 §4.4 — Attendance URLs
+        if (wr.containsKey("attendance_on"))  config.webRequest.attendance_on  = wr["attendance_on"].as<std::string>();
+        if (wr.containsKey("attendance_off")) config.webRequest.attendance_off = wr["attendance_off"].as<std::string>();
+    }
+    // Design Ref: v2.6.1 §3.1 — Attendance 블록 파싱
+    if (doc.containsKey("attendance")) {
+        JsonObject att = doc["attendance"];
+        if (att.containsKey("enabled")) config.attendance.enabled = att["enabled"];
+        if (att.containsKey("source"))  config.attendance.source  = att["source"].as<std::string>();
     }
 
     return ConfigManager::save(config);
@@ -391,6 +404,13 @@ String buildConfigJson() {
     wr["gpio2_low"] = config.webRequest.gpio2_low;
     wr["gpio3_high"] = config.webRequest.gpio3_high;
     wr["gpio3_low"] = config.webRequest.gpio3_low;
+    wr["attendance_on"]  = config.webRequest.attendance_on;
+    wr["attendance_off"] = config.webRequest.attendance_off;
+
+    // v2.6.1 Attendance
+    JsonObject att = doc.createNestedObject("attendance");
+    att["enabled"] = config.attendance.enabled;
+    att["source"]  = config.attendance.source;
 
     String output;
     serializeJson(doc, output);
@@ -458,6 +478,8 @@ void setup() {
     switchMonitor.setPollInterval(config.monitor.pcledPollMs);
     switchMonitor.setOnChange([](bool active) {
         webRequestHandler.fire(active ? "gpio2_low" : "gpio2_high", active ? 1 : 0);
+        // Design Ref: v2.6.1 §5.4 — Attendance dispatcher (config match 시에만 fire)
+        attendanceHandler.onSourceStateChange("gpio2", active);
     });
 
     pinMode(PIN_GPIO1, INPUT);
@@ -527,6 +549,9 @@ void setup() {
 
     // Web Request
     webRequestHandler.begin(&config.webRequest, &config);
+
+    // Design Ref: RemoteDeck_PC_v2.6.1 §5.4 — Attendance dispatcher wiring
+    attendanceHandler.begin(&config.attendance, &webRequestHandler);
     webRequestHandler.setIPGetter([]() -> String {
         return networkManager.localIP().toString();
     });

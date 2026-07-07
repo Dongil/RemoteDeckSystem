@@ -66,6 +66,9 @@ String WebRequestHandler::getURL(const char* event) const {
     if (strcmp(event, "gpio2_low") == 0)  return String(_config->gpio2_low.c_str());
     if (strcmp(event, "gpio3_high") == 0) return String(_config->gpio3_high.c_str());
     if (strcmp(event, "gpio3_low") == 0)  return String(_config->gpio3_low.c_str());
+    // Design Ref: v2.6.1 §5.3 — Attendance URLs
+    if (strcmp(event, "attendance_on") == 0)  return String(_config->attendance_on.c_str());
+    if (strcmp(event, "attendance_off") == 0) return String(_config->attendance_off.c_str());
     return "";
 }
 

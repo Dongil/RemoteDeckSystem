@@ -67,7 +67,7 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.ntp.timezone = doc["ntp"]["timezone"] | "KST-9";
 
     // Firmware
-    config.firmware.version = doc["firmware"]["version"] | "2.6.0";
+    config.firmware.version = doc["firmware"]["version"] | "2.6.1";
     config.firmware.date = doc["firmware"]["date"] | "2026-07-03";
 
     // Auth
@@ -90,6 +90,14 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.webRequest.gpio2_low = wr["gpio2_low"] | "";
     config.webRequest.gpio3_high = wr["gpio3_high"] | "";
     config.webRequest.gpio3_low = wr["gpio3_low"] | "";
+    // Design Ref: v2.6.1 §5.5 — attendance URLs (하위호환: 없으면 빈 문자열)
+    config.webRequest.attendance_on  = wr["attendance_on"]  | "";
+    config.webRequest.attendance_off = wr["attendance_off"] | "";
+
+    // Design Ref: v2.6.1 §5.5 — attendance 블록 (하위호환: 없으면 disabled 기본)
+    JsonObject att = doc["attendance"].as<JsonObject>();
+    config.attendance.enabled = att["enabled"] | false;
+    config.attendance.source  = att["source"]  | "pcled";
 
     Serial.printf("ConfigManager: Loaded config for %s\n", config.deviceId.c_str());
     return true;
@@ -178,6 +186,13 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     wr["gpio2_low"] = config.webRequest.gpio2_low;
     wr["gpio3_high"] = config.webRequest.gpio3_high;
     wr["gpio3_low"] = config.webRequest.gpio3_low;
+    wr["attendance_on"]  = config.webRequest.attendance_on;
+    wr["attendance_off"] = config.webRequest.attendance_off;
+
+    // Design Ref: v2.6.1 §5.5 — Attendance 블록
+    JsonObject att = doc.createNestedObject("attendance");
+    att["enabled"] = config.attendance.enabled;
+    att["source"]  = config.attendance.source;
 
     File file = SPIFFS.open(path, "w");
     if (!file) {
@@ -226,7 +241,7 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.wol.targetMac = "";
     config.ntp.server = "pool.ntp.org";
     config.ntp.timezone = "KST-9";
-    config.firmware.version = "2.6.0";
+    config.firmware.version = "2.6.1";
     config.firmware.date = "2026-07-03";
     config.auth.user = "admin";
     config.auth.pass = "12345";

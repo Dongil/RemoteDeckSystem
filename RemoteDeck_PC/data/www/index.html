@@ -199,6 +199,20 @@
       <div class="cfg-group"><label>NTP 서버</label><input type="text" id="cfg-ntp-server"></div>
       <div class="cfg-group"><label>시간대</label><input type="text" id="cfg-ntp-tz"></div>
     </div>
+    <div class="card">
+      <h2>재부재 시스템</h2>
+      <p style="color:#888;font-size:12px;margin-bottom:8px">선택한 센서의 상태 변화 시 ON/OFF URL이 서버로 호출됩니다. 기존 Web Request 탭의 개별 URL과 독립적으로 동작합니다.</p>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-att-enabled"> 재부재 시스템 연동하기</label></div>
+      <div class="cfg-group"><label>사용 센서</label>
+        <select id="cfg-att-source" style="padding:6px;background:#0a0e27;border:1px solid #333;color:#e0e0e0;border-radius:4px;font-size:13px">
+          <option value="pcled">PC LED (PIR)</option>
+          <option value="gpio2">SwitchMonitor (GPIO2)</option>
+        </select>
+      </div>
+      <div class="cfg-group"><label>ON URL (재실)</label><input type="text" id="cfg-att-on" style="max-width:100%" placeholder="http://server/attend?d=[device_id]&s=on"></div>
+      <div class="cfg-group"><label>OFF URL (부재)</label><input type="text" id="cfg-att-off" style="max-width:100%" placeholder="http://server/attend?d=[device_id]&s=off"></div>
+      <p style="color:#666;font-size:11px">플레이스홀더: [device_id] [device_name] [ip] [mac] [event] [value]</p>
+    </div>
     <div class="btn-row">
       <button onclick="saveEtc()">저장</button>
       <button onclick="rebootDevice()">재부팅</button>
