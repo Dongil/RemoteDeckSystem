@@ -289,7 +289,7 @@ public sealed class RemoteDeckClient
             if (root.TryGetProperty("heap_free", out v)) status.HeapFree = v.GetInt64();
             if (root.TryGetProperty("heap_min", out v)) status.HeapMin = v.GetInt64();
 
-            // v2.6.3: RemoteDeck_PC v2.6.2 attendance mini block (하위호환 — 블록 없으면 unknown 기본)
+            // v2.6.2: RemoteDeck_PC v2.6.2 attendance mini block (하위호환 — 블록 없으면 unknown 기본)
             if (root.TryGetProperty("attendance", out var att) && att.ValueKind == JsonValueKind.Object)
             {
                 if (att.TryGetProperty("enabled", out var e))  status.AttendanceEnabled = e.GetBoolean();

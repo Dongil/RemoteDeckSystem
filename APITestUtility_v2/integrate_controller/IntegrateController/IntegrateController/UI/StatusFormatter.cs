@@ -50,7 +50,7 @@ internal static class StatusFormatter
     public static string FormatBool(bool b) => b ? "ON" : "OFF";
     public static string FormatPc(DeviceStatus? s) => s == null ? "?" : (s.PcOn ? "ON" : "OFF");
 
-    // v2.6.3: RemoteDeck_PC v2.6.2 /api/status.attendance 렌더링
+    // v2.6.2: RemoteDeck_PC v2.6.2 /api/status.attendance 렌더링
     //   enabled=false → 미설정
     //   current=present → 재실 / absent → 부재 / unknown → 미설정
     public static string FormatAttendance(DeviceStatus? s)

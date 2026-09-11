@@ -332,7 +332,7 @@ public partial class MainForm : Form
             var logs = _logPoller.GetLogs(d.Id, 100);   // Design §12: 표시 100건
             foreach (var l in logs)
             {
-                // v2.6.3: 날짜 = client 수신 시각. 시간 = device NTP TimeStr (HH:MM:SS).
+                // v2.6.2: 날짜 = client 수신 시각. 시간 = device NTP TimeStr (HH:MM:SS).
                 var item = new ListViewItem(l.ReceivedAt.ToString("yyyy-MM-dd"));
                 item.SubItems.Add(string.IsNullOrEmpty(l.TimeStr) ? l.Timestamp.ToString() : l.TimeStr);
                 item.SubItems.Add(l.EventStr);
@@ -540,7 +540,7 @@ public partial class MainForm : Form
     // Kept entirely in code (never in Designer) so VS regeneration cannot drop it.
     private void AddLogView()
     {
-        _colLogDate   = new ColumnHeader { Text = "날짜",   Width = 90 };   // v2.6.3
+        _colLogDate   = new ColumnHeader { Text = "날짜",   Width = 90 };   // v2.6.2
         _colLogTime   = new ColumnHeader { Text = "시간",   Width = 80 };
         _colLogEvent  = new ColumnHeader { Text = "이벤트", Width = 80 };
         _colLogDetail = new ColumnHeader { Text = "상세",   Width = 500 };

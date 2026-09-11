@@ -10,7 +10,7 @@ public sealed record LogEntry(
     string Detail
 )
 {
-    // v2.6.3: device Logger는 HH:MM:SS만 저장 (no date). 클라이언트 수신 시각을 날짜 컬럼용으로 기록.
+    // v2.6.2: device Logger는 HH:MM:SS만 저장 (no date). 클라이언트 수신 시각을 날짜 컬럼용으로 기록.
     public DateTime ReceivedAt { get; init; } = DateTime.Now;
 
     public string DedupKey => $"{Timestamp}|{EventStr}|{Detail}";

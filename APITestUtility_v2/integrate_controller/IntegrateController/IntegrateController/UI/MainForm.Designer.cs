@@ -205,7 +205,7 @@ partial class MainForm
 		ColDeviceId.Name = "ColDeviceId";
 		ColDeviceId.ReadOnly = true;
 		// 
-		// ColAttendance (v2.6.3: RemoteDeck_PC v2.6.2 attendance)
+		// ColAttendance (v2.6.2: RemoteDeck_PC v2.6.2 attendance)
 		//
 		ColAttendance.FillWeight = 12F;
 		ColAttendance.HeaderText = "재부재";

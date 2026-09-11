@@ -23,7 +23,7 @@ public sealed class DeviceStatus
     public long HeapFree { get; set; }
     public long HeapMin { get; set; }
 
-    // v2.6.3: RemoteDeck_PC v2.6.2 /api/status.attendance mini block
+    // v2.6.2: RemoteDeck_PC v2.6.2 /api/status.attendance mini block
     // enabled=false 또는 필드 부재 시 "unknown". current: "present" | "absent" | "unknown"
     public bool   AttendanceEnabled { get; set; }
     public string AttendanceSource  { get; set; } = "";
