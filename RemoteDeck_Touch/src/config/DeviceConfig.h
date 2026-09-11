@@ -29,7 +29,8 @@ public:
     std::string deviceID;
     NetworkConfig networkConfig;
     std::string serverURL;
-    int rebootTime;    
-    int sleepTime;        
+    int rebootTime;
+    int sleepTime;
     VersionInfo versionInfo;
+    bool webConfigMode = false;   // v2.6: 다음 부팅을 웹 설정 모드로 (부팅 시 소비, Design §3.1)
 };

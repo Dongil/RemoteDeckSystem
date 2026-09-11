@@ -25,6 +25,7 @@ bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output
     doc["server_url"] = config.serverURL.c_str();
     doc["reboot_time"] = config.rebootTime;
     doc["sleep_time"] = config.sleepTime;
+    doc["web_config_mode"] = config.webConfigMode;   // v2.6
 
     // VersionInfo 구조체를 저장합니다.
     JsonObject version = doc.createNestedObject("version_info");
@@ -71,6 +72,7 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
     config.serverURL = doc["server_url"].as<std::string>();
     config.rebootTime = doc["reboot_time"];
     config.sleepTime = doc["sleep_time"];
+    config.webConfigMode = doc["web_config_mode"] | false;   // v2.6: 필드 부재 시 false (하위호환)
 
     // VersionInfo 구조체를 로드합니다.
     JsonObject version = doc["version_info"];

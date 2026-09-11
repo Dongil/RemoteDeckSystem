@@ -61,6 +61,7 @@ unsigned long lastSyncMillis = 0;   // 마지막 동기화 이후의 millis() �
 int rebootTime = 0; // 재부팅 시간
 
 bool room = false;
+bool g_webMode = false;      // v2.6: 이번 부팅이 웹 설정 모드인지 (Design §2.1)
 unsigned main_t=0;
 bool ethernet_conn = false;
 bool wifi_conn = false;
@@ -106,6 +107,42 @@ void setup()
     mqttEthernet_init();
     mqttEthernet_setCallback(mqtt_ReceivedCallback);
 
+    // v2.6: 부팅 경계 SPI 배타 모드 분기 (Design §2.1)
+    // webConfigMode 면 TFT(TFT_eSPI) 를 아예 init 하지 않고 WebServer 가 SPI 를 단독 점유한다.
+    // → LCD transaction 이 존재하지 않으므로 v2.4 가 실패한 SPI host mutex 경합이 성립하지 않음.
+    g_webMode = deviceConfig.webConfigMode;
+    if (g_webMode) {
+        // one-shot consume: 플래그를 즉시 소비(false 저장) → 전원손실/워치독 등 어떤 비정상
+        // 종료에도 다음 부팅은 LCD 모드로 복귀 (안티브릭, Design §1.2 · §6)
+        deviceConfig.webConfigMode = false;
+        ConfigManager::saveDeviceConfig(deviceConfig);
+
+        // ── WEB CONFIG MODE — LCD/LVGL/터치 미초기화 (S1: 정적 안내화면은 S2) ──
+        IPAddress ip = ETH.localIP();
+        ethernet_conn = (ip != IPAddress(0, 0, 0, 0));
+        imageApi.setNetworkInfo("ethernet", ip.toString());
+        imageApi.setFirmwareInfo("2.6.0-webmode", "2026-09-11");
+        imageApi.attach(&webServer);
+        configApi.attach(&webServer);
+        webLogger.attach(&webServer);
+        otaApi.attach(&webServer);
+        controlApi.begin();
+        controlApi.setMqttPublisher([](const char* status) {
+            if (ethernet_conn) mqttEthernet_publish(status);
+        });
+        controlApi.attach(&webServer);
+
+        if (webServer.begin(80, &touchAuth)) {
+            webLogger.log("BOOT", "WebServer started (v2.6 web config mode, TFT skipped)");
+            Serial.printf("[v2.6] WEB CONFIG MODE — TFT skipped, http://%s:80\n", ip.toString().c_str());
+        } else {
+            Serial.println("[v2.6] WebServer start FAILED");
+        }
+        Serial.println("setup done (web mode)");
+        return;   // ── 웹 모드 setup 종료: 아래 TFT 경로 진입 안 함 ──
+    }
+
+    // ── LCD MODE (기본) — 기존 v2.x 동작, WebServer 미구동 (FR-09) ──
     // 3) LCD(TFT_eSPI) + LVGL 초기화 — ETH 이후
     lvgl_touch_init(240, 320);
     ui_init();
@@ -131,40 +168,11 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // v2.3-httpd module-webui: esp_http_server + 풀세트 API
-    // Design Ref: §2.1, §4 — core 0 별도 task, LVGL/MQTT (core 1) 와 격리
-    // Plan SC: FR-01, FR-03, FR-04, FR-08
-    {
-        IPAddress ip = ETH.localIP();
-        imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.3.0-ctrl", "2026-06-25");
-    }
-    // 콜백 attach
-    imageApi.attach(&webServer);
-    configApi.attach(&webServer);
-    webLogger.attach(&webServer);
-    otaApi.attach(&webServer);
-    // v2.3 module-control: ControlApi attach + MQTT publish bridge
-    controlApi.begin();
-    controlApi.setMqttPublisher([](const char* status) {
-        // Web POST /api/control 시 호출. ethernet/wifi 자동 분기.
-        if (ethernet_conn) mqttEthernet_publish(status);
-        else if (wifi_conn) mqttHandler.xenoMqttPublish(status);
-    });
-    controlApi.attach(&webServer);
-
-    if (webServer.begin(80, &touchAuth)) {
-        webLogger.log("BOOT", "WebServer started on port 80");
-        Serial.println("WebServer started — 14 endpoints active (incl. /api/control)");
-    } else {
-        Serial.println("WebServer start FAILED");
-    }
-
     screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
 
     screen_main = true; //메인 화면으로 왔는지
 
-    Serial.println("setup done");
+    Serial.println("setup done (lcd mode)");
 }
 
 // v2.1 C4: HTTPClient (ESP32 내장) - lwIP 위에서 ETH/WiFi 모두 동작
@@ -173,14 +181,17 @@ HTTPClient http;
 void loop()
 {
     delay(10);
-    lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
-    // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
-    imageApi.loop();
-    // v2.3 module-webui: /api/reboot 요청 시 1초 grace 후 ESP.restart()
-    configApi.loop();
-    // v2.3 module-ota: Update.end 성공 후 1초 grace 후 신 펌웨어로 reboot
-    otaApi.loop();
+    // v2.6: 웹 설정 모드 — 웹 모듈만 서비스. lvgl_loop/터치 미호출 → 서비스 중 TFT transaction 0 (SPI 경합 없음)
+    if (g_webMode) {
+        imageApi.loop();
+        configApi.loop();
+        otaApi.loop();
+        if (ethernet_conn) mqttEthernet_loop();
+        return;
+    }
+
+    lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
     // Mqtt 사용시
     if(ethernet_conn){
