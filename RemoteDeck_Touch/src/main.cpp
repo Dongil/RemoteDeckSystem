@@ -191,6 +191,27 @@ void loop()
         return;
     }
 
+    // v2.6 [S1-TEST] 임시 시리얼 트리거 — LCD 모드에서 "webmode" 입력 시 웹 설정 모드로 재부팅.
+    //   deviceconfig.json 만 갱신(기기 SPIFFS 의 serverconfig/imagesconfig/images/www 보존).
+    //   줄바꿈 유무·선행 잡문자와 무관하게 누적 substring 매칭으로 즉시 트리거. 정식 진입(LCD 버튼)은 S4.
+    while (Serial.available()) {
+        static const char TARGET[] = "webmode";
+        static uint8_t matchPos = 0;
+        char c = (char)Serial.read();
+        if (c == TARGET[matchPos]) {
+            matchPos++;
+            if (TARGET[matchPos] == '\0') {   // 전체 매칭
+                Serial.println("[v2.6] webmode 요청 — deviceconfig 갱신 후 웹 설정 모드로 재부팅");
+                deviceConfig.webConfigMode = true;
+                ConfigManager::saveDeviceConfig(deviceConfig);
+                delay(200);
+                ESP.restart();
+            }
+        } else {
+            matchPos = (c == TARGET[0]) ? 1 : 0;   // 불일치 시 재시작(현재 문자가 'w'면 1)
+        }
+    }
+
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
     // Mqtt 사용시

@@ -217,35 +217,15 @@ static esp_err_t sendProgmem(httpd_req_t* req, const char* data, const char* mim
 }
 esp_err_t WebServer::handleRoot(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;
-    // v2.3-final: WebUI 비활성 — SPI 버스 (W5500+TFT_eSPI VSPI 공유) 충돌로
-    //   큰 응답 (수십 KB) 시 hang. v2.4 sub-task 로 분리:
-    //     - SPI frequency 낮춤 (TFT 27MHz → 10MHz)
-    //     - TFT_eSPI mutex 명시적 동기화
-    //     - 또는 LCD H/W rewire (별도 SPI host)
-    //   API 엔드포인트 (/api/control, /api/status 등) 는 정상 작동 (< 1KB 응답).
-    static const char* minimal_html =
-        "<!DOCTYPE html><html><head><meta charset=utf-8>"
-        "<title>RemoteDeck_Touch v2.3</title>"
-        "<style>body{font-family:sans-serif;max-width:600px;margin:20px auto;padding:16px}"
-        "code{background:#eee;padding:2px 6px;border-radius:3px}</style>"
-        "</head><body>"
-        "<h1>RemoteDeck_Touch v2.3</h1>"
-        "<p><strong>WebUI deferred</strong> — SPI bus (VSPI: W5500+TFT) contention "
-        "causes hangs on large responses. To be addressed in v2.4.</p>"
-        "<p>API endpoints functional:</p>"
-        "<ul>"
-        "<li><a href=/api/status>GET /api/status</a></li>"
-        "<li><a href='/api/control?since=0'>GET /api/control?since=N</a> (polling)</li>"
-        "<li>POST /api/control body <code>{\"in\":true}</code> or <code>{\"out\":true}</code></li>"
-        "<li><a href=/api/log>GET /api/log</a></li>"
-        "<li><a href=/api/config>GET /api/config</a></li>"
-        "<li><a href=/api/images/list>GET /api/images/list</a></li>"
-        "</ul>"
-        "<p>Auth: admin:12345 (Basic)</p>"
-        "</body></html>";
+    // v2.6: 풀 WebUI 재활성 — v2.3 deferral(W5500+TFT VSPI 공유 충돌) 해제.
+    //   웹 설정 모드는 TFT 를 init 하지 않아 WebServer 가 SPI 버스를 단독 점유 → 큰 응답 hang 없음
+    //   (S1 PoC: 6동시/burst/30s sustained zero-fail 검증). INDEX_HTML_GZ 는 CSS+JS 인라인
+    //   통합 페이지의 gzip 사전 압축본(널 포함 바이너리이므로 strlen 기반 sendProgmem 대신 길이 지정 전송).
     httpd_resp_set_status(req, "200 OK");
     httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_send(req, minimal_html, strlen(minimal_html));
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, (const char*)INDEX_HTML_GZ, INDEX_HTML_GZ_LEN);
 }
 esp_err_t WebServer::handleStyle(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;
