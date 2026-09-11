@@ -153,7 +153,7 @@ Plan/Design 초기에는 예측하지 않았으나 실기 검증에서 발견하
 
 | Item | 즉시성 | 트리거 |
 |---|:-:|---|
-| IntegrateController에 attendance 컬럼 추가 | 낮음 | 통합 감시 필요 시 |
+| ~~IntegrateController에 attendance 컬럼 추가~~ → ✅ **완료** (2026-09-11, [RemoteDeck_PC_v2.6.2-IC](../../2026-09/RemoteDeck_PC_v2.6.2-IC/), 실기 검증) | 낮음 | 통합 감시 필요 시 |
 | 재부재 이력 검색·필터·엑스포트 | 낮음 | 이력 활용 요구 시 |
 | GPIO1/GPIO3 감지·실시간 갱신 (GpioMonitor 승격) | 낮음 | 다른 접점 입력 요구 |
 | 부팅 sync 개별 채널별 옵션화 | 낮음 | 이중 발화 문제 발생 시 |
