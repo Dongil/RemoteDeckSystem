@@ -62,6 +62,9 @@ int rebootTime = 0; // 재부팅 시간
 
 bool room = false;
 bool g_webMode = false;      // v2.6: 이번 부팅이 웹 설정 모드인지 (Design §2.1)
+uint32_t g_webModeStartMs = 0;                       // v2.6 S2: 웹모드 진입 시각
+extern volatile uint32_t g_webLastActivityMs;        // v2.6 S2: WebServer.cpp — 마지막 요청 시각
+static const uint32_t WEB_IDLE_TIMEOUT_MS = 600000;  // v2.6 S2: 무활동 10분 → LCD 복귀
 unsigned main_t=0;
 bool ethernet_conn = false;
 bool wifi_conn = false;
@@ -117,9 +120,11 @@ void setup()
         deviceConfig.webConfigMode = false;
         ConfigManager::saveDeviceConfig(deviceConfig);
 
-        // ── WEB CONFIG MODE — LCD/LVGL/터치 미초기화 (S1: 정적 안내화면은 S2) ──
+        // ── WEB CONFIG MODE — LCD/LVGL/터치 미초기화, WebServer 가 SPI 단독 점유 ──
         IPAddress ip = ETH.localIP();
         ethernet_conn = (ip != IPAddress(0, 0, 0, 0));
+        // v2.6 S2: 정적 안내화면 1회 렌더 (TFT 만, LVGL 없음). 이후 tft 무접근 → 서비스 중 경합 없음.
+        lcd_show_webmode_info(ip.toString().c_str());
         imageApi.setNetworkInfo("ethernet", ip.toString());
         imageApi.setFirmwareInfo("2.6.0-webmode", "2026-09-11");
         imageApi.attach(&webServer);
@@ -138,6 +143,7 @@ void setup()
         } else {
             Serial.println("[v2.6] WebServer start FAILED");
         }
+        g_webModeStartMs = millis();   // v2.6 S2: 무활동 타임아웃 기준
         Serial.println("setup done (web mode)");
         return;   // ── 웹 모드 setup 종료: 아래 TFT 경로 진입 안 함 ──
     }
@@ -185,9 +191,16 @@ void loop()
     // v2.6: 웹 설정 모드 — 웹 모듈만 서비스. lvgl_loop/터치 미호출 → 서비스 중 TFT transaction 0 (SPI 경합 없음)
     if (g_webMode) {
         imageApi.loop();
-        configApi.loop();
+        configApi.loop();   // /api/reboot(웹 "재부팅" 버튼) → ESP.restart() = LCD 모드 복귀(exit)
         otaApi.loop();
         if (ethernet_conn) mqttEthernet_loop();
+        // v2.6 S2: 무활동 타임아웃 — 마지막 요청(없으면 진입 시각) 기준 10분 경과 시 LCD 복귀
+        uint32_t ref = (g_webLastActivityMs != 0) ? g_webLastActivityMs : g_webModeStartMs;
+        if ((uint32_t)(millis() - ref) > WEB_IDLE_TIMEOUT_MS) {
+            Serial.println("[v2.6] 웹 설정 모드 무활동 타임아웃 — LCD 모드로 재부팅");
+            delay(100);
+            ESP.restart();
+        }
         return;
     }
 

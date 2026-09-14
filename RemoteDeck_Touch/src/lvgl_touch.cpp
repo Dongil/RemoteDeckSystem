@@ -145,6 +145,33 @@ void lvgl_touch_init(uint16_t screenWidth, uint16_t screenHeight)
     delay(100);
 }
 
+// v2.6: 웹 설정 모드 정적 안내화면 — TFT 만 init 후 1회 렌더. LVGL/터치/ui 미사용.
+//   웹모드 loop 에는 lv_timer_handler 가 없어 이후 tft 무접근 → 웹서버 서비스 중 SPI 경합 없음.
+void lcd_show_webmode_info(const char* ip)
+{
+    tft.begin();
+    tft.setRotation(180);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.setCursor(8, 24);
+    tft.println("WEB CONFIG");
+    tft.setCursor(8, 48);
+    tft.println("MODE");
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(1);
+    tft.setCursor(8, 96);
+    tft.print("URL : http://");
+    tft.println(ip);
+    tft.setCursor(8, 116);
+    tft.println("Auth: admin / 12345");
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(8, 152);
+    tft.println("Reboot from web to");
+    tft.setCursor(8, 168);
+    tft.println("return to LCD mode.");
+}
+
 void screen_saver_init(int timeout){
     
     if(timeout != 0)

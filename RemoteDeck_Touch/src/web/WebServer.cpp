@@ -10,6 +10,9 @@
 
 static const char* TAG = "WebServer";
 
+// v2.6: 웹 설정 모드 무활동 타임아웃용 — 인증 통과(=유효 요청) 시각. main.cpp loop 가 감시.
+volatile uint32_t g_webLastActivityMs = 0;
+
 bool WebServer::begin(uint16_t port, const TouchAuth* auth) {
     _auth = auth;
 
@@ -93,6 +96,7 @@ bool WebServer::requireAuth(httpd_req_t* req) {
     char expected[64];
     snprintf(expected, sizeof(expected), "%s:%s", _auth->user, _auth->pass);
     if (strcmp((char*)decoded, expected) != 0) { send401(req); return false; }
+    g_webLastActivityMs = millis();   // v2.6: 활동 기록 (무활동 타임아웃 리셋)
     return true;
 }
 
