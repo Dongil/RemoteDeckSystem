@@ -66,6 +66,7 @@ v2.6 웹 설정 모드에서 제공되는 Touch 웹 인터페이스를 RemoteDec
 - [ ] 설정 = **Device Config / Server Config / 이미지 관리** sub-tab, **항목별 폼**(현재 JSON textarea 대체)
 - [ ] Server Config용 신규 API `GET/POST /api/serverconfig` (추가 — 하위호환)
 - [ ] 설정 저장 = 클라이언트에서 필드→객체 조립 후 통짜 POST (PC 패턴, `/api/config` 계약 유지)
+- [ ] **야간 화면 끄기(신규)** — NTP 기반 야간 시간대(시작~종료) LCD off, 터치 시 잠깐 켜졌다 재off. 설정>Device Config, 기존 스크린세이버(sleepTime)와 **별개**
 - [ ] **Image Config는 설정에서 제외**
 - [ ] 관리 탭: 기기관리(재부팅) + 펌웨어 OTA(Config에서 이동) + **재부팅 스케줄(신규)**
 - [ ] 이미지 관리를 **설정 하위 sub-tab**으로 이동 (현재 이미지 표시 + 교체/삭제, `/api/images/*` 재활용)
@@ -99,6 +100,7 @@ v2.6 웹 설정 모드에서 제공되는 Touch 웹 인터페이스를 RemoteDec
 | FR-10 | 이미지 관리 — **설정 하위 sub-tab**으로 이동, 현재 이미지 표시 + 교체/삭제 | High | Pending |
 | FR-11 | 제어/로그 탭 PC 스타일 정리 (기능 유지) | Medium | Pending |
 | FR-12 | **하위호환** — 기존 기기 OTA 업그레이드 후 구 config 파싱·정상 동작 | High | Pending |
+| FR-13 | **야간 화면 끄기(신규)** — 설정>Device Config에 시작/종료 시각 + enabled. NTP 기반 야간 구간 LCD off, 터치 시 잠깐 켜졌다 재off. 스크린세이버와 별개 | Medium | Pending |
 
 ### 3.2 Non-Functional Requirements
 

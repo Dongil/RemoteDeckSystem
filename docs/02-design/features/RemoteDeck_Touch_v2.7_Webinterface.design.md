@@ -114,6 +114,19 @@ selected_option: C (Pragmatic)
 - JsonUtils deserialize: `enabled = doc["rebootSchedule"]["enabled"] | false` 등 default 가드 → **구 deviceconfig.json 파싱 안전**.
 - 기존 `rebootTime`(int)는 유지(공존). v2.7 스케줄이 우선; rebootTime 처리 로직 변경 없음(하위호환).
 
+### 3.2b 신규 — nightOff (야간 화면 끄기, deviceconfig.json 내 추가, 하위호환)
+```jsonc
+"nightOff": {
+  "enabled": false,          // 부재 시 false (구 기기 하위호환)
+  "startHour": 22, "startMinute": 0,
+  "endHour": 6,   "endMinute": 0   // 자정 넘김(22:00~06:00) 지원
+}
+```
+- **스크린세이버(sleepTime)와 별개** — sleepTime은 무활동 기반, nightOff는 시간대 기반.
+- 실행(main.cpp LCD loop, NTP): now가 [start,end) 야간 구간이면 LCD 백라이트 off. 자정 wrap 처리(start>end면 반전).
+- **터치 동작**: 야간 구간에 화면이 off여도 터치 시 기존 스크린세이버 wake 경로로 잠깐 켜졌다(짧은 timeout) 다시 off. → 야간에도 급하면 확인 가능.
+- 백라이트 off 메커니즘은 기존 스크린세이버 경로 재사용(Do 단계에서 BL 핀/디스플레이 off 확정).
+
 ### 3.3 실행 로직 (main.cpp, LCD 모드 loop)
 ```
 매 분 1회: NTP now 조회 → enabled && (now.weekday ∈ days) && now.hour==hour && now.minute==minute
@@ -188,7 +201,8 @@ selected_option: C (Pragmatic)
 - [ ] Input: wifiSSID, wifiPasswd
 - [ ] Toggle: usingStatic; Input: staticIP/Gateway/Subnet/PrimaryDNS/SecondaryDNS
 - [ ] Input: serverURL
-- [ ] Dropdown: sleepTime (No/1/2/3/4/5/10/20/30/60)
+- [ ] Dropdown: sleepTime (스크린세이버, No/1/2/3/4/5/10/20/30/60)
+- [ ] Night Off(야간 화면 끄기): Toggle enabled + 시작(HH:MM) + 종료(HH:MM) — 스크린세이버와 별개
 - [ ] Button: 저장 (whole deviceconfig POST /api/config)
 
 #### 설정 > Server Config
@@ -296,9 +310,9 @@ RemoteDeck_Touch/
 | Module | Scope Key | Description | Turns |
 |--------|-----------|-------------|:-----:|
 | 탭 골격+상태/제어/로그 | `module-shell` | 5탭 네비·PC 토큰 + 상태/제어/로그 이관 | 6-8 |
-| 설정 폼 + serverconfig | `module-settings` | Device/Server 항목별 폼 + /api/serverconfig | 8-10 |
+| 설정 폼 + serverconfig | `module-settings` | Device/Server 항목별 폼(+nightOff 야간끄기 필드) + /api/serverconfig | 8-10 |
 | 관리(재부팅+OTA) | `module-admin` | 재부팅 버튼 + OTA 이동 | 3-4 |
-| 재부팅 스케줄 | `module-schedule` | rebootSchedule + /api/schedule + main NTP 실행 | 6-8 |
+| 시간기반 실행 | `module-schedule` | rebootSchedule + /api/schedule + **nightOff 백라이트 실행** + main NTP loop | 8-10 |
 | 이미지+embed+검증 | `module-image-embed` | 이미지 설정하위 + embed + 실기/하위호환 | 5-7 |
 
 #### Recommended Session Plan
