@@ -82,16 +82,35 @@ void message_process(String msg);   //mqtt, webrequest에서 받아온 메세지
 void gotoDeviceManager();   //장치 설정으로 이동
 void ibtnLogo_LongClick(lv_event_t * e);  // v2.1: LV_EVENT_LONG_PRESSED 핸들러 (setup() 에서 직접 등록)
 
-// v2.6 S4: 장치 설정 "웹 설정 모드" 버튼 콜백 — deviceconfig 갱신 후 웹모드로 재부팅.
+// v2.6 S5: 웹 설정 모드 진입 확인 다이얼로그 결과 처리. OK 일 때만 진입(오탭 방지).
+//   한글 폰트 subset 글리프 부재 → 기존 msgbox(DeviceManager) 관례대로 영문 라벨 사용.
+static void webmodeConfirm_cb(lv_event_t * e)
+{
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    const char* btn = lv_msgbox_get_active_btn_text(mbox);
+    if (!btn) return;
+    if (strcmp(btn, "OK") == 0) {
+        Serial.println("[v2.6] 웹 설정 모드 확인 — deviceconfig 갱신 후 재부팅");
+        deviceConfig.webConfigMode = true;
+        ConfigManager::saveDeviceConfig(deviceConfig);
+        delay(200);
+        ESP.restart();
+    }
+    // Cancel: msgbox + 모달 배경(backdrop)까지 제거. lv_obj_del(mbox) 는 배경이 남아
+    //   dim/blur + 입력차단 오버레이가 잔존함 → close_async 로 배경 포함 async 삭제.
+    lv_msgbox_close_async(mbox);
+}
+
+// v2.6 S4/S5: 장치 설정 "웹 설정 모드" 아이콘 버튼 콜백 — 확인창을 띄운다(즉시 재부팅 X).
 //   임시 시리얼 webmode 트리거를 대체하는 정식 진입 UX (사용자 요구: 장치설정에서 진입).
 static void webmodeBtn_cb(lv_event_t * e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    Serial.println("[v2.6] 웹 설정 모드 버튼 — deviceconfig 갱신 후 재부팅");
-    deviceConfig.webConfigMode = true;
-    ConfigManager::saveDeviceConfig(deviceConfig);
-    delay(200);
-    ESP.restart();
+    static const char * btns[] = {"OK", "Cancel", ""};
+    lv_obj_t * mbox = lv_msgbox_create(NULL, "Web Config Mode",
+        "Switch to web config mode?\nLCD turns off; reboot to return.", btns, false);
+    lv_obj_add_event_cb(mbox, webmodeConfirm_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_center(mbox);
 }
 
 void setup()
