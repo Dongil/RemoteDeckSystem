@@ -64,6 +64,7 @@ bool room = false;
 bool g_webMode = false;      // v2.6: 이번 부팅이 웹 설정 모드인지 (Design §2.1)
 uint32_t g_webModeStartMs = 0;                       // v2.6 S2: 웹모드 진입 시각
 extern volatile uint32_t g_webLastActivityMs;        // v2.6 S2: WebServer.cpp — 마지막 요청 시각
+extern "C" const lv_img_dsc_t ui_img_web;            // v2.6 S4: 웹 globe 아이콘 (src/ui_web_icon.c)
 static const uint32_t WEB_IDLE_TIMEOUT_MS = 600000;  // v2.6 S2: 무활동 10분 → LCD 복귀
 unsigned main_t=0;
 bool ethernet_conn = false;
@@ -80,6 +81,18 @@ void sendHttpMessage(const char* msg);  //http request로 메세지 전송 함�
 void message_process(String msg);   //mqtt, webrequest에서 받아온 메세지 처리 함수
 void gotoDeviceManager();   //장치 설정으로 이동
 void ibtnLogo_LongClick(lv_event_t * e);  // v2.1: LV_EVENT_LONG_PRESSED 핸들러 (setup() 에서 직접 등록)
+
+// v2.6 S4: 장치 설정 "웹 설정 모드" 버튼 콜백 — deviceconfig 갱신 후 웹모드로 재부팅.
+//   임시 시리얼 webmode 트리거를 대체하는 정식 진입 UX (사용자 요구: 장치설정에서 진입).
+static void webmodeBtn_cb(lv_event_t * e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    Serial.println("[v2.6] 웹 설정 모드 버튼 — deviceconfig 갱신 후 재부팅");
+    deviceConfig.webConfigMode = true;
+    ConfigManager::saveDeviceConfig(deviceConfig);
+    delay(200);
+    ESP.restart();
+}
 
 void setup()
 {
@@ -156,6 +169,18 @@ void setup()
     // v2.1 fix: SquareLine 자동생성 ui_event_ibtnLogo 는 LV_EVENT_CLICKED 만 처리.
     // LV_EVENT_LONG_PRESSED 를 main.cpp 의 ibtnLogo_LongClick 으로 직접 라우팅.
     lv_obj_add_event_cb(ui_ibtnLogo, ibtnLogo_LongClick, LV_EVENT_LONG_PRESSED, NULL);
+
+    // v2.6 S4: 장치 설정 화면 "웹 설정 모드" 진입 아이콘 버튼 (동적 생성 — SquareLine regen 안전).
+    //   기존 네트워크 nav 아이콘 스타일에 맞춰 상단(제목 아래) 좌측에 웹 globe 아이콘 배치.
+    //   한글 폰트 subset 에 웹/설/모/드 글리프 부재 → 텍스트 대신 아이콘 사용 (사용자 요구).
+    {
+        lv_obj_t* wb = lv_imgbtn_create(ui_ScreenDevice);
+        lv_imgbtn_set_src(wb, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_web, NULL);
+        lv_obj_set_size(wb, 32, 15);                     // 네트워크 nav 아이콘과 동일 크기
+        lv_obj_align(wb, LV_ALIGN_CENTER, -90, -127);    // 우측 nav(ibtnWifi2 x=+90) 미러 → 제목 같은 줄·좌우대칭
+        lv_obj_add_flag(wb, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(wb, webmodeBtn_cb, LV_EVENT_CLICKED, NULL);
+    }
 
     lv_timer_handler();
 
