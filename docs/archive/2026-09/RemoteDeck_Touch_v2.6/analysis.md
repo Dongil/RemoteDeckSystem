@@ -8,13 +8,13 @@ project: RemoteDeckSystem
 component: RemoteDeck_Touch (firmware)
 branch: v2.6-touch-webmode
 base: v2.3-httpd
-match_rate: 97
-verification: static build + field runtime (실기기, PoC 9/9)
+match_rate: 100
+verification: static build + field runtime (실기기, PoC 9/9, FR-08 10분 타임아웃 실측)
 ---
 
 # RemoteDeck_Touch v2.6 Gap Analysis — 웹 설정 모드 (부팅 경계 SPI 배타)
 
-**Overall Match Rate**: **97%** (Structural 100 × 0.15 + Functional 95 × 0.25 + Contract 100 × 0.25 + Runtime 95 × 0.35)
+**Overall Match Rate**: **100%** (Structural 100 × 0.15 + Functional 100 × 0.25 + Contract 100 × 0.25 + Runtime 100 × 0.35)
 
 **Baseline**: v2.3-httpd (httpd 5모듈 존재, WebUI/PNG/OTA 비활성) → **Target**: 부팅 경계 배타 웹 설정 모드
 **Verification**: Static 빌드 + 실기기 필드 검증 (PoC 9/9, LCD 버튼·정적화면·왕복 확인, 2026-09-11 ~ 09-14)
@@ -69,11 +69,11 @@ verification: static build + field runtime (실기기, PoC 9/9)
 | FR-05 | 웹 OTA | ✅ | 기존 OtaApi(U_FLASH app OTA) — 무변경 정상 |
 | FR-06 | OTA 설정 보존 | ➖ | app-only OTA라 SPIFFS 무영향 → 해당 없음 |
 | FR-07 | 종료 자동 복귀 | ✅ | 웹 reboot 버튼 + one-shot 소비 → LCD 복귀 |
-| FR-08 | 무활동 타임아웃 | ⚠️ | 코드 검증(requireAuth 활동시각+10분 watchdog). 실제 10분 만료는 미관측 |
+| FR-08 | 무활동 타임아웃 | ✅ | requireAuth 활동시각+10분 watchdog. **웹접속 없이 10분 뒤 자동 LCD 재부팅 실기 확인**(2026-09-14) |
 | FR-09 | LCD 모드 웹 미구동 | ✅ | LCD 부팅 시 포트 미개방 |
 | FR-10 | LCD regression 無 | ✅ | 부팅 로그 + 터치/MQTT/이미지 정상 |
 
-Met 8 / N/A 1(FR-06) / code-only 1(FR-08) → **정량 ~95%**.
+Met 9 / N/A 1(FR-06) → **100%**. 추가(계획 외): 웹 진입 **확인 다이얼로그**(오탭 방지, OK/Cancel) 구현·실기 확인.
 
 ---
 
@@ -108,7 +108,7 @@ P2 burst 30 → all 200 / P3 30s sustained → ok=159 fail=0 / P4 heap 안정
 PoC v2.4 Gate: pass=9 fail=0 ✅
 ```
 
-미관측: FR-08 10분 타임아웃 실제 만료(코드 검증만).
+추가 실기 확인(2026-09-14): FR-08 웹접속 없이 10분 뒤 자동 LCD 재부팅 관측 완료. 웹 진입 확인 다이얼로그 OK 진입/Cancel 닫힘·포커스 복원 확인.
 
 ---
 
@@ -116,8 +116,8 @@ PoC v2.4 Gate: pass=9 fail=0 ✅
 
 ```
 Overall = Structural×0.15 + Functional×0.25 + Contract×0.25 + Runtime×0.35
-        = 100×0.15 + 95×0.25 + 100×0.25 + 95×0.35
-        = 15 + 23.75 + 25 + 33.25 = 97.0%
+        = 100×0.15 + 100×0.25 + 100×0.25 + 100×0.35
+        = 15 + 25 + 25 + 35 = 100.0%
 ```
 
 ≥ 90% → iterate 불필요.
@@ -130,13 +130,15 @@ Overall = Structural×0.15 + Functional×0.25 + Contract×0.25 + Runtime×0.35
 - one-shot consumed flag = 안티브릭 (전원손실/워치독/모니터 close-reset 모두 LCD 복귀).
 - 한글 폰트 subset 글리프 부재(웹/설/모/드) → 커스텀 아이콘으로 우회 (텍스트 회피).
 
-## 8. Carry Items (v2.6+ 후보)
+## 8. Carry Items 처리 결과 (2026-09-14 사용자 결정)
 
-| Item | 즉시성 | 트리거 |
-|---|:-:|---|
-| PNG 디코더(LV_USE_PNG) 웹모드 재활성 | 낮음 | 웹 이미지 관리 요구 시 |
-| FR-08 10분 타임아웃 실측 확인 | 낮음 | 장기 방치 시나리오 검증 필요 시 |
-| 웹모드 진입 확인 다이얼로그(오탭 방지) | 낮음 | 오조작 보고 시 |
+| Item | 결과 |
+|---|---|
+| FR-08 10분 타임아웃 실측 | ✅ **완료** — 웹접속 없이 10분 뒤 자동 LCD 재부팅 실기 확인 |
+| 웹모드 진입 확인 다이얼로그 | ✅ **완료** — OK/Cancel msgbox 구현·실기 확인 (commit a06c461) |
+| PNG 디코더 재활성 | ⛔ **미채택** — BMP 유지 (사용자 결정). heap 부담 대비 실익 낮음 |
+
+→ 잔여 carry item 없음. v2.6 완결.
 
 ---
 

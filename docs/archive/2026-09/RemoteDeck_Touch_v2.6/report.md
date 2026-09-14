@@ -8,8 +8,8 @@ project: RemoteDeckSystem
 component: RemoteDeck_Touch (firmware)
 branch: v2.6-touch-webmode
 base: v2.3-httpd
-match_rate: 97
-sc_success_rate: "7/7 met (SC-1~7)"
+match_rate: 100
+sc_success_rate: "7/7 met (SC-1~7) + FR-08 실측"
 status: completed
 ---
 
@@ -28,7 +28,7 @@ status: completed
 | **Problem** | RemoteDeck_Touch는 설정/OTA 수단이 LCD 터치뿐. 웹UI 동시구동은 W5500+TFT VSPI 공유 충돌로 v2.2~v2.4 전부 실패, v2.5에서 "영구 포기(sunset)"로 마감됨. |
 | **Solution Delivered** | 웹과 LCD를 **동시에 안 돌리고 부팅 경계로 배타 분리**. "웹 설정 모드"로 부팅하면 TFT/LVGL/터치를 아예 init 하지 않고 WebServer가 SPI를 단독 점유 → v2.4가 실패한 SPI host mutex 경합이 구조적으로 성립하지 않음. 장치설정 화면의 웹 아이콘 버튼으로 진입, 재부팅으로 복귀. |
 | **Function/UX Effect** | 관리자는 브라우저로 RemoteDeck_PC 수준 풀 WebUI(설정 변경·로그·제어·OTA)를 사용. 웹모드 진입 시 LCD엔 "WEB CONFIG MODE / URL / Auth" 정적 안내. 종료(웹 재부팅/무활동 10분/전원)하면 LCD 터치 모드로 자동 복귀. 일상 사용은 기존 LCD 그대로(무회귀). |
-| **Core Value** | v2.5에서 포기했던 WebUI를 **되살림**. 동시성 대신 모드 전환으로 SPI 한계 우회. matchRate 97%, PoC 0/9→9/9. |
+| **Core Value** | v2.5에서 포기했던 WebUI를 **되살림**. 동시성 대신 모드 전환으로 SPI 한계 우회. matchRate 100%, PoC 0/9→9/9. |
 
 ---
 
@@ -57,7 +57,7 @@ status: completed
 | S2 | `c1706ad` | 정적 안내화면 + 무활동 타임아웃 + exit | 실기 |
 | S3 | — | OTA 설정보존 → app-only OTA라 불필요 | ➖ |
 | S4 | `bc88334` | 장치설정 웹 진입 아이콘 버튼 | 실기 |
-| S5 | `35c2a38` | 임시 시리얼 트리거 제거 + 문서/아카이브 | 실기 |
+| S5 | `35c2a38`·`a06c461` | 시리얼 트리거 제거 + 진입 확인 다이얼로그(오탭 방지) + FR-08 실측 + 아카이브 | 실기 |
 
 ---
 
@@ -97,13 +97,15 @@ SC-1~7 **7/7 met** (§analysis §5). 대표: PoC 9/9(v2.4 0/9), TFT transaction 
 
 ---
 
-## 7. Carry Items
+## 7. Carry Items 처리 (2026-09-14 사용자 결정)
 
-| Item | 즉시성 |
-|---|:-:|
-| PNG 디코더 웹모드 재활성 | 낮음 |
-| FR-08 10분 타임아웃 실측 | 낮음 |
-| 웹모드 진입 확인 다이얼로그 | 낮음 |
+| Item | 결과 |
+|---|---|
+| FR-08 10분 타임아웃 실측 | ✅ 완료 (웹접속 없이 10분 뒤 자동 LCD 재부팅 실기 확인) |
+| 웹모드 진입 확인 다이얼로그 | ✅ 완료 (OK/Cancel msgbox 구현·실기 확인, commit a06c461) |
+| PNG 디코더 재활성 | ⛔ 미채택 (BMP 유지, heap 부담 대비 실익 낮음) |
+
+→ 잔여 carry item 없음.
 
 ---
 
@@ -114,4 +116,5 @@ SC-1~7 **7/7 met** (§analysis §5). 대표: PoC 9/9(v2.4 0/9), TFT transaction 
 - [x] 코드 commit (S1~S5)
 - [x] 임시 시리얼 트리거 제거 + 클린 펌웨어 실기 업로드
 - [x] Archive (docs/archive/2026-09/RemoteDeck_Touch_v2.6/)
-- [ ] archive commit + origin push
+- [x] archive commit + origin push
+- [x] Carry items 처리 (FR-08 실측 ✅ / 확인 다이얼로그 ✅ / PNG 미채택 ⛔)
