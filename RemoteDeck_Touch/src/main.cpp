@@ -14,9 +14,13 @@
 #include "mqtt/ethernet_mqtt.h"
 #include "images/images.h"
 #include "utils/TypeUtils.h"
-// Design Ref: §5.3 Component List — Web Layer (v2 Image Manager)
+// Design Ref: §5.3 Component List — Web Layer (v2.3 module-webui)
 #include "web/WebServer.h"
 #include "web/ImageApi.h"
+#include "web/ConfigApi.h"
+#include "web/Logger.h"
+#include "web/OtaApi.h"
+#include "web/ControlApi.h"
 
 #define FORMAT_SPIFFS_IF_FAILED true
 
@@ -37,9 +41,13 @@ PubSubClient mqttEthernet_Client(ethClient);
 String httpUrl = "";
 uint16_t httpPort = 0;
 
-// v2 Web UI - Plan SC: FR-01, FR-02, FR-03
+// v2 Web UI - Plan SC: FR-01, FR-02, FR-03, FR-04
 WebServer webServer;
 ImageApi  imageApi;
+ConfigApi configApi;
+Logger    webLogger;
+OtaApi    otaApi;
+ControlApi controlApi;
 TouchAuth touchAuth;  // 기본 admin/12345 (TODO: deviceconfig 에서 로드)
 
 DeviceManager* deviceManager;   // 장치 연결 관리자
@@ -50,9 +58,14 @@ const char* IMAGES_DOWNLOAD_PATH = "/download/imagesconfig.json";  // ImagesConf
 
 time_t currentTime = 0; // 서버에서 받은 시간을 저장
 unsigned long lastSyncMillis = 0;   // 마지막 동기화 이후의 millis() 값을 저장하여 경과 시간을 계산
-int rebootTime = 0; // 재부팅 시간
+extern bool g_deviceConfigMigrated;  // v2.7: JsonUtils — reboot_time → rebootSchedule 이관 신호
 
 bool room = false;
+bool g_webMode = false;      // v2.6: 이번 부팅이 웹 설정 모드인지 (Design §2.1)
+uint32_t g_webModeStartMs = 0;                       // v2.6 S2: 웹모드 진입 시각
+extern volatile uint32_t g_webLastActivityMs;        // v2.6 S2: WebServer.cpp — 마지막 요청 시각
+extern "C" const lv_img_dsc_t ui_img_web;            // v2.6 S4: 웹 globe 아이콘 (src/ui_web_icon.c)
+static const uint32_t WEB_IDLE_TIMEOUT_MS = 600000;  // v2.6 S2: 무활동 10분 → LCD 복귀
 unsigned main_t=0;
 bool ethernet_conn = false;
 bool wifi_conn = false;
@@ -68,6 +81,37 @@ void sendHttpMessage(const char* msg);  //http request로 메세지 전송 함�
 void message_process(String msg);   //mqtt, webrequest에서 받아온 메세지 처리 함수
 void gotoDeviceManager();   //장치 설정으로 이동
 void ibtnLogo_LongClick(lv_event_t * e);  // v2.1: LV_EVENT_LONG_PRESSED 핸들러 (setup() 에서 직접 등록)
+
+// v2.6 S5: 웹 설정 모드 진입 확인 다이얼로그 결과 처리. OK 일 때만 진입(오탭 방지).
+//   한글 폰트 subset 글리프 부재 → 기존 msgbox(DeviceManager) 관례대로 영문 라벨 사용.
+static void webmodeConfirm_cb(lv_event_t * e)
+{
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    const char* btn = lv_msgbox_get_active_btn_text(mbox);
+    if (!btn) return;
+    if (strcmp(btn, "OK") == 0) {
+        Serial.println("[v2.6] 웹 설정 모드 확인 — deviceconfig 갱신 후 재부팅");
+        deviceConfig.webConfigMode = true;
+        ConfigManager::saveDeviceConfig(deviceConfig);
+        delay(200);
+        ESP.restart();
+    }
+    // Cancel: msgbox + 모달 배경(backdrop)까지 제거. lv_obj_del(mbox) 는 배경이 남아
+    //   dim/blur + 입력차단 오버레이가 잔존함 → close_async 로 배경 포함 async 삭제.
+    lv_msgbox_close_async(mbox);
+}
+
+// v2.6 S4/S5: 장치 설정 "웹 설정 모드" 아이콘 버튼 콜백 — 확인창을 띄운다(즉시 재부팅 X).
+//   임시 시리얼 webmode 트리거를 대체하는 정식 진입 UX (사용자 요구: 장치설정에서 진입).
+static void webmodeBtn_cb(lv_event_t * e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    static const char * btns[] = {"OK", "Cancel", ""};
+    lv_obj_t * mbox = lv_msgbox_create(NULL, "Web Config Mode",
+        "Switch to web config mode?\nLCD turns off; reboot to return.", btns, false);
+    lv_obj_add_event_cb(mbox, webmodeConfirm_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_center(mbox);
+}
 
 void setup()
 {
@@ -87,6 +131,13 @@ void setup()
     ConfigManager::loadImagesConfig(imagesConfig);
     delay(100);
 
+    // v2.7: 레거시 reboot_time → rebootSchedule 이관이 발생했으면 1회 파일에 persist.
+    //   (웹 관리 탭 /api/schedule 이 deviceconfig.json 을 직접 읽으므로 파일 반영 필요)
+    if (g_deviceConfigMigrated) {
+        ConfigManager::saveDeviceConfig(deviceConfig);
+        Serial.println("[v2.7] reboot_time → rebootSchedule 마이그레이션 저장 완료");
+    }
+
     // 저장된 설정에서 ip, port를 파싱
     if (TypeUtils::parseAddress(deviceConfig.serverURL.c_str(), httpUrl, httpPort)) {
         Serial.printf("Http Ip : %s\nHttp Port : %u\n", httpUrl.c_str(), httpPort);
@@ -98,6 +149,46 @@ void setup()
     mqttEthernet_init();
     mqttEthernet_setCallback(mqtt_ReceivedCallback);
 
+    // v2.6: 부팅 경계 SPI 배타 모드 분기 (Design §2.1)
+    // webConfigMode 면 TFT(TFT_eSPI) 를 아예 init 하지 않고 WebServer 가 SPI 를 단독 점유한다.
+    // → LCD transaction 이 존재하지 않으므로 v2.4 가 실패한 SPI host mutex 경합이 성립하지 않음.
+    g_webMode = deviceConfig.webConfigMode;
+    if (g_webMode) {
+        // one-shot consume: 플래그를 즉시 소비(false 저장) → 전원손실/워치독 등 어떤 비정상
+        // 종료에도 다음 부팅은 LCD 모드로 복귀 (안티브릭, Design §1.2 · §6)
+        deviceConfig.webConfigMode = false;
+        ConfigManager::saveDeviceConfig(deviceConfig);
+
+        // ── WEB CONFIG MODE — LCD/LVGL/터치 미초기화, WebServer 가 SPI 단독 점유 ──
+        IPAddress ip = ETH.localIP();
+        ethernet_conn = (ip != IPAddress(0, 0, 0, 0));
+        // v2.6 S2: 정적 안내화면 1회 렌더 (TFT 만, LVGL 없음). 이후 tft 무접근 → 서비스 중 경합 없음.
+        lcd_show_webmode_info(ip.toString().c_str());
+        imageApi.setNetworkInfo("ethernet", ip.toString());
+        imageApi.setFirmwareInfo("2.7.0-webmode", "2026-09-14");
+        imageApi.setDeviceId(String(deviceConfig.deviceID.c_str()));   // v2.7 상태 탭
+        imageApi.attach(&webServer);
+        configApi.attach(&webServer);
+        webLogger.attach(&webServer);
+        otaApi.attach(&webServer);
+        controlApi.begin();
+        controlApi.setMqttPublisher([](const char* status) {
+            if (ethernet_conn) mqttEthernet_publish(status);
+        });
+        controlApi.attach(&webServer);
+
+        if (webServer.begin(80, &touchAuth)) {
+            webLogger.log("BOOT", "WebServer started (v2.6 web config mode, TFT skipped)");
+            Serial.printf("[v2.6] WEB CONFIG MODE — TFT skipped, http://%s:80\n", ip.toString().c_str());
+        } else {
+            Serial.println("[v2.6] WebServer start FAILED");
+        }
+        g_webModeStartMs = millis();   // v2.6 S2: 무활동 타임아웃 기준
+        Serial.println("setup done (web mode)");
+        return;   // ── 웹 모드 setup 종료: 아래 TFT 경로 진입 안 함 ──
+    }
+
+    // ── LCD MODE (기본) — 기존 v2.x 동작, WebServer 미구동 (FR-09) ──
     // 3) LCD(TFT_eSPI) + LVGL 초기화 — ETH 이후
     lvgl_touch_init(240, 320);
     ui_init();
@@ -105,6 +196,18 @@ void setup()
     // v2.1 fix: SquareLine 자동생성 ui_event_ibtnLogo 는 LV_EVENT_CLICKED 만 처리.
     // LV_EVENT_LONG_PRESSED 를 main.cpp 의 ibtnLogo_LongClick 으로 직접 라우팅.
     lv_obj_add_event_cb(ui_ibtnLogo, ibtnLogo_LongClick, LV_EVENT_LONG_PRESSED, NULL);
+
+    // v2.6 S4: 장치 설정 화면 "웹 설정 모드" 진입 아이콘 버튼 (동적 생성 — SquareLine regen 안전).
+    //   기존 네트워크 nav 아이콘 스타일에 맞춰 상단(제목 아래) 좌측에 웹 globe 아이콘 배치.
+    //   한글 폰트 subset 에 웹/설/모/드 글리프 부재 → 텍스트 대신 아이콘 사용 (사용자 요구).
+    {
+        lv_obj_t* wb = lv_imgbtn_create(ui_ScreenDevice);
+        lv_imgbtn_set_src(wb, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_web, NULL);
+        lv_obj_set_size(wb, 32, 15);                     // 네트워크 nav 아이콘과 동일 크기
+        lv_obj_align(wb, LV_ALIGN_CENTER, -90, -127);    // 우측 nav(ibtnWifi2 x=+90) 미러 → 제목 같은 줄·좌우대칭
+        lv_obj_add_flag(wb, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(wb, webmodeBtn_cb, LV_EVENT_CLICKED, NULL);
+    }
 
     lv_timer_handler();
 
@@ -123,29 +226,96 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    // v2.1: WebServer 비활성화 — AsyncTCP task slot 충돌로 listen 안 됨 ('failed to start task').
-    // Touch 환경(LVGL + W5500 + PubSubClient + AsyncTCP)에서 task config 미해결.
-    // v2.2 에서 esphome fork 또는 지연 시작 패턴으로 재시도 예정.
-    // LAN 스택 통일 (ETH.h + ETH_PHY_W5500) 자체는 v2.1 에서 완료 — 향후 WebUI 활성화 시 즉시 사용 가능.
-    Serial.println("Web UI: deferred to v2.2 (AsyncTCP task slot conflict)");
-
-    screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
+    // v2.7: 스크린세이버 소스를 deviceConfig 로 통일 (웹 Device Config 편집 반영). LCD 저장은 둘 다 세팅해 정합.
+    screen_saver_init(deviceConfig.sleepTime);  //스크린세이브 설정
 
     screen_main = true; //메인 화면으로 왔는지
 
-    Serial.println("setup done");
+    Serial.println("setup done (lcd mode)");
 }
 
 // v2.1 C4: HTTPClient (ESP32 내장) - lwIP 위에서 ETH/WiFi 모두 동작
 HTTPClient http;
 
+// v2.7 S4b: 야간 화면 끄기 창 판정 (자정 wrap 지원)
+static bool inNightWindow(const NightOffConfig& n, const struct tm* t) {
+    int now   = t->tm_hour * 60 + t->tm_min;
+    int start = n.startHour * 60 + n.startMinute;
+    int end   = n.endHour * 60 + n.endMinute;
+    if (start == end) return false;                  // 동일 = 사용 안함
+    if (start < end)  return (now >= start && now < end);
+    return (now >= start || now < end);              // 자정 넘김(예: 22:00~06:00)
+}
+
 void loop()
 {
     delay(10);
+
+    // v2.6: 웹 설정 모드 — 웹 모듈만 서비스. lvgl_loop/터치 미호출 → 서비스 중 TFT transaction 0 (SPI 경합 없음)
+    if (g_webMode) {
+        imageApi.loop();
+        configApi.loop();   // /api/reboot(웹 "재부팅" 버튼) → ESP.restart() = LCD 모드 복귀(exit)
+        otaApi.loop();
+        if (ethernet_conn) mqttEthernet_loop();
+        // v2.7: 상태 탭 런타임 정보(MQTT/시각) 1초 주기 갱신
+        static uint32_t lastRt = 0;
+        if (millis() - lastRt > 1000) {
+            lastRt = millis();
+            char ts[9] = "-";
+            if (currentTime > 0) { struct tm* t = gmtime(&currentTime); strftime(ts, sizeof(ts), "%H:%M:%S", t); }
+            imageApi.setRuntimeInfo(mqttEthernet_connected(), ts);
+        }
+        // v2.6 S2: 무활동 타임아웃 — 마지막 요청(없으면 진입 시각) 기준 10분 경과 시 LCD 복귀
+        uint32_t ref = (g_webLastActivityMs != 0) ? g_webLastActivityMs : g_webModeStartMs;
+        if ((uint32_t)(millis() - ref) > WEB_IDLE_TIMEOUT_MS) {
+            Serial.println("[v2.6] 웹 설정 모드 무활동 타임아웃 — LCD 모드로 재부팅");
+            delay(100);
+            ESP.restart();
+        }
+        return;
+    }
+
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
-    // Design Ref: §12.2 — main loop 에서 핫리로드 처리 (web task ↔ LVGL race 회피)
-    imageApi.loop();
+    // v2.7: NTP currentTime 소프트 클록 — MQTT tick 사이 millis() 로 초 단위 보간.
+    //   재부팅 스케줄/야간 화면 끄기가 tick 사이에도 정확한 시각을 쓰도록 매 루프 진행.
+    //   (기존엔 레거시 reboot_time>0 블록이 이 역할을 겸했으나, 통합하며 무조건화)
+    if (currentTime > 0) {
+        unsigned long nowMs   = millis();
+        unsigned long elapsed = (nowMs - lastSyncMillis) / 1000;
+        if (elapsed > 0) {
+            currentTime    += elapsed;
+            lastSyncMillis += elapsed * 1000;
+        }
+    }
+
+    // v2.7 S4a: 재부팅 스케줄 (NTP currentTime=UTC+9, LCD 모드에서만). 분당 1회 중복 방지.
+    if (deviceConfig.rebootSchedule.enabled && currentTime > 0) {
+        struct tm* t = gmtime(&currentTime);
+        if (t) {
+            static int lastSchedKey = -1;
+            int key = t->tm_hour * 60 + t->tm_min;
+            if (deviceConfig.rebootSchedule.days[t->tm_wday]
+                && t->tm_hour == deviceConfig.rebootSchedule.hour
+                && t->tm_min  == deviceConfig.rebootSchedule.minute
+                && key != lastSchedKey) {
+                lastSchedKey = key;
+                Serial.println("[v2.7] 재부팅 스케줄 도달 — 재부팅");
+                delay(100);
+                ESP.restart();
+            }
+        }
+    }
+
+    // v2.7 S4b: 야간 화면 끄기 (NTP currentTime 기준, LCD 모드)
+    {
+        bool nightActive = false;
+        if (deviceConfig.nightOff.enabled && currentTime > 0) {
+            struct tm* nt = gmtime(&currentTime);
+            if (nt) nightActive = inNightWindow(deviceConfig.nightOff, nt);
+        }
+        lvgl_set_night_active(nightActive);
+    }
 
     // Mqtt 사용시
     if(ethernet_conn){
@@ -185,29 +355,8 @@ void loop()
         }   
         
         main_t = millis();
-
-        if(rebootTime > 0)
-        {
-            unsigned long elapsedSeconds = (main_t - lastSyncMillis) / 1000;
-            currentTime += elapsedSeconds;  // 마지막 동기화 이후의 경과 초 더함
-            lastSyncMillis += elapsedSeconds * 1000;  // 최종 동기화 시각 저장
-
-            struct tm* timeInfo = gmtime(&currentTime);
-            
-            // char timeString[30];
-            // strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeInfo);
-
-            // Serial.print("현재 시간 : ");
-            // Serial.println(timeString);
-
-            // 재부팅 조건 체크
-            // 1. 기기가 06시 이전에 켜져 있다가 06:00:00 ~ 06:00:04 사이에 재부팅
-            if (timeInfo->tm_hour == rebootTime && timeInfo->tm_min == 00 && timeInfo->tm_sec > 0 && timeInfo->tm_sec < 4) {
-                Serial.println("재부팅합니다.");
-                delay(3000);
-                ESP.restart();
-            }           
-        }
+        // v2.7: 레거시 reboot_time 일일 재부팅 로직 제거 — 재부팅은 rebootSchedule 로 일원화(위).
+        //   currentTime 소프트 클록도 위에서 무조건 진행하므로 여기선 시간 처리 없음.
     }
 
     /*
@@ -370,7 +519,7 @@ void message_process(String msg) {
     // JSON 데이터에서 필드 값 추출
     const char* status = doc["status"];
     const char* data = doc["data"];
-    uint64_t tick = doc["tick"];
+    uint64_t tick = doc["tick"] | 0ULL;   // v2.7: 필드 부재 시 0 (아래 유효성 가드)
 
     // 필드 값 출력 확인
     Serial.print("status: ");
@@ -383,34 +532,36 @@ void message_process(String msg) {
     // status 에 따라서 추가 처리 로직 작성
     if (strcmp(status, "IN") == 0) {
         // 여기서 'IN' 상태일 때의 처리 로직 추가
-        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL); 
+        // v2.7: 웹모드는 LVGL/ui 미init → LCD 미러 스킵(안 하면 uninit ui_ibtnRoom 접근 크래시→재부팅)
+        if (!g_webMode) lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL);
         room = true;
         Serial.println("Room IN");
+        // v2.3 module-control: web Long polling client 갱신
+        controlApi.notifyState(true, false);
     } else if (strcmp(status, "OUT") == 0) {
         // 여기서 'OUT' 상태일 때의 처리 로직 추가
-        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);  
+        if (!g_webMode) lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);
         room = false;
         Serial.println("Room OUT");
+        controlApi.notifyState(false, true);
     }
 
-    // tick 값 추출 (서버의 Unix 타임스탬프, UTC 기준)
-    // UTC+9 (서울)로 변환하기 위해 9시간을 더함
-    tick += 9UL * 3600;
+    // tick = 서버 Unix 타임스탬프(UTC). v2.7 유효성 가드:
+    //   tick 필드가 없거나 이상치(0/과거)면 시계를 갱신하지 않음 —
+    //   기존엔 누락 시 0 → +9h = 1970-01-01 09:00 으로 시계가 오염되어
+    //   재부팅 스케줄/야간 화면 끄기가 오작동할 수 있었음. 마지막 정상 시각 + 소프트클록 유지.
+    if (tick > 1600000000ULL) {          // 2020-09-13 이후만 유효
+        currentTime = (time_t)(tick + 9UL * 3600);  // UTC+9 (서울)
+        lastSyncMillis = millis();
 
-    // 변환된 tick 값을 time_t로 변환 후, gmtime()으로 구조체 생성
-    currentTime = tick;
-    lastSyncMillis = millis();
-
-    rebootTime = deviceConfig.rebootTime;
-    // Serial.print("재부팅 시각: ");
-    // Serial.println(rebootTime);
-
-    struct tm *timeInfo = gmtime(&currentTime);
-    char timeString[30];
-    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeInfo);
-
-    Serial.print("시간 동기화: ");
-    Serial.println(timeString);
+        struct tm *timeInfo = gmtime(&currentTime);
+        char timeString[30];
+        strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeInfo);
+        Serial.print("시간 동기화: ");
+        Serial.println(timeString);
+    } else if (tick != 0) {
+        Serial.printf("tick 이상치 무시: %llu (시계 미갱신)\n", (unsigned long long)tick);
+    }
 }
 
 void gotoDeviceManager()

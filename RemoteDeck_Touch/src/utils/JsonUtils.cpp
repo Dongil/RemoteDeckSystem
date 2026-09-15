@@ -1,9 +1,13 @@
 #include "JsonUtils.h"
 
+// v2.7: 직전 deserializeDeviceConfig 호출에서 레거시 reboot_time → rebootSchedule 이관이
+//   발생했는지 여부. setup()/다운로드 config 로드 후 1회 파일 persist 신호로 사용.
+bool g_deviceConfigMigrated = false;
+
 // DeviceConfig 직렬화
 bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output) {
-    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다.
-    StaticJsonDocument<1024> doc;
+    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다. (v2.7: night_off/reboot_schedule 여유)
+    StaticJsonDocument<2048> doc;
 
     // DeviceConfig 데이터를 JSON 형태로 변환합니다.
     doc["device_id"] = config.deviceID.c_str();
@@ -25,6 +29,23 @@ bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output
     doc["server_url"] = config.serverURL.c_str();
     doc["reboot_time"] = config.rebootTime;
     doc["sleep_time"] = config.sleepTime;
+    doc["web_config_mode"] = config.webConfigMode;   // v2.6
+
+    // v2.7: 야간 화면 끄기
+    JsonObject night = doc.createNestedObject("night_off");
+    night["enabled"]      = config.nightOff.enabled;
+    night["start_hour"]   = config.nightOff.startHour;
+    night["start_minute"] = config.nightOff.startMinute;
+    night["end_hour"]     = config.nightOff.endHour;
+    night["end_minute"]   = config.nightOff.endMinute;
+
+    // v2.7: 재부팅 스케줄
+    JsonObject rs = doc.createNestedObject("reboot_schedule");
+    rs["enabled"] = config.rebootSchedule.enabled;
+    JsonArray rdays = rs.createNestedArray("days");
+    for (int i = 0; i < 7; i++) if (config.rebootSchedule.days[i]) rdays.add(i);
+    rs["hour"]    = config.rebootSchedule.hour;
+    rs["minute"]  = config.rebootSchedule.minute;
 
     // VersionInfo 구조체를 저장합니다.
     JsonObject version = doc.createNestedObject("version_info");
@@ -39,8 +60,8 @@ bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output
 
 // DeviceConfig 역직렬화
 bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json) {
-    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다.
-    StaticJsonDocument<1024> doc;
+    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다. (v2.7: night_off/reboot_schedule 여유)
+    StaticJsonDocument<2048> doc;
 
     // JSON 문자열을 파싱합니다.
     DeserializationError error = deserializeJson(doc, json);
@@ -50,6 +71,8 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
         Serial.println(error.f_str());
         return false;
     }
+
+    g_deviceConfigMigrated = false;   // v2.7: 이번 로드의 마이그레이션 신호 초기화
 
     // JSON 데이터를 DeviceConfig 구조체로 변환합니다.
     config.deviceID = doc["device_id"].as<std::string>();
@@ -71,6 +94,38 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
     config.serverURL = doc["server_url"].as<std::string>();
     config.rebootTime = doc["reboot_time"];
     config.sleepTime = doc["sleep_time"];
+    config.webConfigMode = doc["web_config_mode"] | false;   // v2.6: 필드 부재 시 false (하위호환)
+
+    // v2.7: 야간 화면 끄기 (필드 부재 시 default — 하위호환)
+    config.nightOff.enabled     = doc["night_off"]["enabled"] | false;
+    config.nightOff.startHour   = doc["night_off"]["start_hour"] | 22;
+    config.nightOff.startMinute = doc["night_off"]["start_minute"] | 0;
+    config.nightOff.endHour     = doc["night_off"]["end_hour"] | 6;
+    config.nightOff.endMinute   = doc["night_off"]["end_minute"] | 0;
+
+    // v2.7: 재부팅 스케줄 (부재 시 default — 하위호환)
+    config.rebootSchedule.enabled = doc["reboot_schedule"]["enabled"] | false;
+    for (int i = 0; i < 7; i++) config.rebootSchedule.days[i] = false;
+    JsonArray rdays = doc["reboot_schedule"]["days"];
+    if (!rdays.isNull()) {
+        for (JsonVariant v : rdays) { int d = v.as<int>(); if (d >= 0 && d < 7) config.rebootSchedule.days[d] = true; }
+    }
+    config.rebootSchedule.hour   = doc["reboot_schedule"]["hour"] | 4;
+    config.rebootSchedule.minute = doc["reboot_schedule"]["minute"] | 0;
+
+    // v2.7 마이그레이션: pre-v2.7 config 는 reboot_schedule 키가 없음.
+    //   레거시 reboot_time(기본 7 = 매일 07:00 재부팅)을 rebootSchedule 로 이관 →
+    //   재부팅을 웹 스케줄로 일원화(레거시 로직 제거)해도 기존 필드 기기의 자동 재부팅 유지.
+    //   * reboot_schedule 키가 이미 있으면(v2.7+) 사용자가 껐을 수 있어 절대 덮어쓰지 않음.
+    if (!doc.containsKey("reboot_schedule") && config.rebootTime > 0) {
+        config.rebootSchedule.enabled = true;
+        for (int i = 0; i < 7; i++) config.rebootSchedule.days[i] = true;
+        config.rebootSchedule.hour   = config.rebootTime;
+        config.rebootSchedule.minute = 0;
+        g_deviceConfigMigrated = true;
+        Serial.printf("[v2.7] reboot_time=%d → rebootSchedule 매일 %02d:00 이관\n",
+                      config.rebootTime, config.rebootTime);
+    }
 
     // VersionInfo 구조체를 로드합니다.
     JsonObject version = doc["version_info"];

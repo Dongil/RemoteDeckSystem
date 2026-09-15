@@ -152,8 +152,9 @@ static uint16_t sleepMinutesToIndex(int minutes) {
 void DeviceManager::updateDeviceInfo() {
     lv_textarea_set_text(ui_txtaDeviceID, deviceConfig.deviceID.c_str());
     lv_textarea_set_text(ui_txtaServerurl, deviceConfig.serverURL.c_str());
-    // v2.1 fix: 저장된 sleepTime 값을 dropdown 에 표시 (serverConfig.sleepTime 우선 — main.cpp setup() 사용처)
-    lv_dropdown_set_selected(ui_dropSleep, sleepMinutesToIndex(serverConfig.sleepTime));
+    // v2.7 fix: 단일 소스(deviceConfig.sleepTime)에서 읽음 — boot(main.cpp:223)/웹 UI 와 동일 필드.
+    //   기존엔 serverConfig.sleepTime 을 읽어, 웹에서 스크린세이버를 바꿔도 LCD 장치설정엔 반영 안 됨.
+    lv_dropdown_set_selected(ui_dropSleep, sleepMinutesToIndex(deviceConfig.sleepTime));
 }
 
 void DeviceManager::saveToDevice() {

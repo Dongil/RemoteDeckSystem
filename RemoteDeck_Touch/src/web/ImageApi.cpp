@@ -6,6 +6,8 @@
 #include "../images/images.h"
 #include <ArduinoJson.h>
 
+extern bool g_webMode;  // main.cpp — 웹 설정 모드(LVGL 미init) 여부
+
 void ImageApi::attach(WebServer* ws) {
     if (!ws) return;
     ws->setStatusGetter([this]() { return buildStatusJson(); });
@@ -21,8 +23,14 @@ void ImageApi::loop() {
     // upload 완료 후 main loop 에서 images_update() 호출
     if (_pendingReload) {
         _pendingReload = false;
-        Serial.println("ImageApi: triggering images_update() from main loop");
-        images_update();
+        // v2.7: 웹모드는 LVGL/ui 미init → images_update()(lv_img_set_src) 호출 시 크래시.
+        //   웹모드에선 파일만 저장하고 LCD hot-reload 스킵 (LCD 모드 부팅 시 반영).
+        if (!g_webMode) {
+            Serial.println("ImageApi: triggering images_update() from main loop");
+            images_update();
+        } else {
+            Serial.println("ImageApi: web mode — images_update() skipped (LVGL 미init)");
+        }
     }
 }
 
@@ -146,6 +154,11 @@ String ImageApi::buildStatusJson() const {
 
     doc["fw_version"] = _fwVersion;
     doc["fw_date"]    = _fwDate;
+
+    // v2.7: 상태 탭 PC 스타일 상세정보
+    doc["device_id"]      = _deviceId;
+    doc["mqtt_connected"] = _mqttConnected;
+    doc["time"]           = _timeStr;
 
     String out;
     serializeJson(doc, out);

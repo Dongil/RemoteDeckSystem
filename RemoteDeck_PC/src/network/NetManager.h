@@ -38,12 +38,20 @@ private:
     bool _notifiedConnected = false;
     bool _ethMgmtActive = false;  // ETH as management interface in WiFi mode
 
+    // Cold-boot recovery state (W5500 POR settle + GOT_IP watchdog)
+    unsigned long _ethBeginAt = 0;
+    bool          _ethWaitingGotIp = false;
+
     ConnectedCallback _onConnected = nullptr;
 
     void initEthernet(NetworkConfig& config);
     void initEthManagement();
     void initWiFiSTA(NetworkConfig& config);
     static IPAddress strToIP(const std::string& str);
+
+    bool tryEthBegin();
+    void w5500SoftReset();
+    void checkGotIpWatchdog();
 
     static void onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info);
     static NetManager* _instance;

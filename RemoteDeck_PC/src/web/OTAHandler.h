@@ -17,4 +17,12 @@ private:
     ProgressCallback _onProgress = nullptr;
     FilenameCallback _onFilename = nullptr;
     size_t _totalSize = 0;
+
+    // v2.5.1 — SPIFFS OTA 시 설정 파일 보존 (backup → OTA → remount → restore)
+    int    _pendingCmd = U_FLASH;
+    String _savedDeviceConfig;
+    String _savedSchedule;
+
+    void backupSpiffsConfigs();
+    void restoreSpiffsConfigs();
 };

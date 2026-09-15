@@ -10,6 +10,8 @@
 
 #include "control/RelayController.h"
 #include "control/PCMonitor.h"
+#include "control/SwitchMonitor.h"
+#include "control/AttendanceHandler.h"
 #include "control/ScheduleManager.h"
 #include "control/WOLSender.h"
 
@@ -40,6 +42,8 @@ MQTTTestState mqttTestState = {{}, IPAddress(), 0, {}, {}, 2};
 DeviceConfig config;
 RelayController relayController;
 PCMonitor pcMonitor;
+SwitchMonitor switchMonitor;
+AttendanceHandler attendanceHandler;
 ScheduleManager scheduleManager;
 WOLSender wolSender;
 NetManager networkManager;
@@ -155,6 +159,8 @@ void onPCStateChange(bool pcOn) {
     publishEvent(buildPCLedEvent());
     webServer.ws().broadcastStatus(buildStatusJson().c_str());
     webRequestHandler.fire(pcOn ? "pcled_on" : "pcled_off", pcOn ? 1 : 0);
+    // Design Ref: v2.6.1 §5.4 — Attendance dispatcher (config match 시에만 fire)
+    attendanceHandler.onSourceStateChange("pcled", pcOn);
 }
 
 void onScheduleAction(uint8_t relay, const std::string& action) {
@@ -241,6 +247,15 @@ bool onUDPConfig(const char* jsonConfig) {
         if (wr.containsKey("gpio2_low"))   config.webRequest.gpio2_low = wr["gpio2_low"].as<std::string>();
         if (wr.containsKey("gpio3_high"))  config.webRequest.gpio3_high = wr["gpio3_high"].as<std::string>();
         if (wr.containsKey("gpio3_low"))   config.webRequest.gpio3_low = wr["gpio3_low"].as<std::string>();
+        // Design Ref: v2.6.1 §4.4 — Attendance URLs
+        if (wr.containsKey("attendance_on"))  config.webRequest.attendance_on  = wr["attendance_on"].as<std::string>();
+        if (wr.containsKey("attendance_off")) config.webRequest.attendance_off = wr["attendance_off"].as<std::string>();
+    }
+    // Design Ref: v2.6.1 §3.1 — Attendance 블록 파싱
+    if (doc.containsKey("attendance")) {
+        JsonObject att = doc["attendance"];
+        if (att.containsKey("enabled")) config.attendance.enabled = att["enabled"];
+        if (att.containsKey("source"))  config.attendance.source  = att["source"].as<std::string>();
     }
 
     return ConfigManager::save(config);
@@ -312,6 +327,12 @@ String buildStatusJson() {
     doc["mqtt_connected"] = mqttHandler.isConnected();
     doc["heap_free"] = ESP.getFreeHeap();
     doc["heap_min"] = ESP.getMinFreeHeap();
+
+    // Design Ref: v2.6.2 §3.4 — attendance mini block (외부 API 조회 지원)
+    JsonObject att = doc.createNestedObject("attendance");
+    att["enabled"] = config.attendance.enabled;
+    att["source"]  = config.attendance.source;
+    att["current"] = attendanceHandler.currentStateText();
 
     String output;
     serializeJson(doc, output);
@@ -389,6 +410,13 @@ String buildConfigJson() {
     wr["gpio2_low"] = config.webRequest.gpio2_low;
     wr["gpio3_high"] = config.webRequest.gpio3_high;
     wr["gpio3_low"] = config.webRequest.gpio3_low;
+    wr["attendance_on"]  = config.webRequest.attendance_on;
+    wr["attendance_off"] = config.webRequest.attendance_off;
+
+    // v2.6.1 Attendance
+    JsonObject att = doc.createNestedObject("attendance");
+    att["enabled"] = config.attendance.enabled;
+    att["source"]  = config.attendance.source;
 
     String output;
     serializeJson(doc, output);
@@ -450,8 +478,20 @@ void setup() {
     pcMonitor.setPollInterval(config.monitor.pcledPollMs);
     pcMonitor.setAutoNotify(config.monitor.autoNotify);
 
+    // Design Ref: RemoteDeck_PC_v2.6 §5.3 — GPIO2 접점(광커플러) 상태 감지.
+    // pcled와 동일 poll 주기 재사용. LOW=active → fire("gpio2_low"), HIGH → fire("gpio2_high").
+    switchMonitor.begin(PIN_GPIO2);
+    switchMonitor.setPollInterval(config.monitor.pcledPollMs);
+    switchMonitor.setOnChange([](bool active) {
+        webRequestHandler.fire(active ? "gpio2_low" : "gpio2_high", active ? 1 : 0);
+        // Design Ref: v2.6.1 §5.4 — Attendance dispatcher (config match 시에만 fire)
+        attendanceHandler.onSourceStateChange("gpio2", active);
+        // Design Ref: v2.6.2 §5.3 — GPIO2 실시간 반영: WebSocket status broadcast (Plan SC-6)
+        webServer.ws().broadcastStatus(buildStatusJson().c_str());
+    });
+
     pinMode(PIN_GPIO1, INPUT);
-    pinMode(PIN_GPIO2, INPUT);
+    // Design Ref: §5.3 — PIN_GPIO2는 SwitchMonitor.begin()에서 INPUT_PULLUP 설정
     pinMode(PIN_GPIO3, INPUT);
 
     // Network v2.1: single mode (ethernet OR wifi STA), non-blocking
@@ -492,6 +532,12 @@ void setup() {
     // Schedule
     scheduleManager.begin(SCHEDULE_PATH);
     scheduleManager.setOnAction(onScheduleAction);
+    // Design Ref: §5.1 — reboot action은 별도 콜백으로 격리
+    scheduleManager.setOnReboot([]() {
+        Serial.println("Schedule: reboot triggered");
+        delay(200);
+        ESP.restart();
+    });
 
     // RS485
     rs485Handler.begin(PIN_RS485_RX, PIN_RS485_TX, RS485_BAUD);
@@ -511,6 +557,22 @@ void setup() {
 
     // Web Request
     webRequestHandler.begin(&config.webRequest, &config);
+
+    // Design Ref: RemoteDeck_PC_v2.6.1 §5.4 — Attendance dispatcher wiring
+    attendanceHandler.begin(&config.attendance, &webRequestHandler);
+    // Design Ref: v2.6.2 §5.3 — state getters for /api/status current + syncOnBoot
+    attendanceHandler.setStateGetters(
+        []() { return pcMonitor.isPCOn(); },
+        []() { return switchMonitor.isActive(); }
+    );
+    // v2.6.2 fix-3: NTP 시각 getter (Entry.timeStr 저장용, HH:MM:SS)
+    attendanceHandler.setTimeGetter([]() { return String(ntpSync.getTimeString().c_str()); });
+    // v2.6.2 fix-3: Logger 브릿지 (재부재 상태 변경을 시스템 로그에도 기록)
+    attendanceHandler.setLoggerBridge([](const char* cat, const char* det) { logger.log(cat, det); });
+    // v2.6.2 fix-3: WebRequestHandler fire 결과를 링버퍼 httpCode에 반영
+    webRequestHandler.setResultCallback([](const char* event, int code) {
+        attendanceHandler.onFireResult(event, code);
+    });
     webRequestHandler.setIPGetter([]() -> String {
         return networkManager.localIP().toString();
     });
@@ -545,6 +607,10 @@ void setup() {
         s.action = doc["action"] | "on";
         s.relay = doc["relay"] | 1;
 
+        // Design Ref: §4.2 — action 화이트리스트 + reboot은 relay 강제 0
+        if (s.action != "on" && s.action != "off" && s.action != "toggle" && s.action != "reboot") return false;
+        if (s.action == "reboot") s.relay = 0;
+
         if (s.id == 0) return scheduleManager.addSchedule(s);
         return scheduleManager.updateSchedule(s);
     });
@@ -559,6 +625,8 @@ void setup() {
         ESP.restart();
     });
     webServer.setLogGetter([]() { return logger.toJson(); });
+    // Design Ref: v2.6.2 §5.2 — /api/attendance/history endpoint
+    webServer.setAttendanceGetter([]() { return attendanceHandler.toJson(); });
     webServer.setAuthChanger([](const String& curPass, const String& newUser, const String& newPass) {
         if (curPass != String(config.auth.pass.c_str())) return false;
         config.auth.user = newUser.c_str();
@@ -677,15 +745,37 @@ void startMQTTTestTask() {
     launchMQTTTestTask();
 }
 
+// Design Ref: §5.3 — 부팅 완료 후 1회 실행 one-shot flag
+static bool _bootSyncedOnce = false;
+static unsigned long _bootReadyAt = 0;
+
 void loop() {
     networkManager.loop();
     mqttHandler.loop();
     rs485Handler.loop();
     relayController.loop();
     pcMonitor.loop();
+    switchMonitor.loop();
     scheduleManager.loop();
     udpDiscovery.loop();
     webServer.ws().loop();
+
+    // Plan SC-6/7: GOT_IP + 5s stabilization 후 WebRequest 초기 sync 1회
+    if (!_bootSyncedOnce && networkManager.isConnected()) {
+        if (_bootReadyAt == 0) _bootReadyAt = millis();
+        if (millis() - _bootReadyAt >= 5000) {
+            WebRequestHandler::StateReaders readers;
+            readers.gpio1 = []() { return digitalRead(PIN_GPIO1) == HIGH ? 1 : 0; };
+            readers.gpio2 = []() { return digitalRead(PIN_GPIO2) == HIGH ? 1 : 0; };
+            readers.gpio3 = []() { return digitalRead(PIN_GPIO3) == HIGH ? 1 : 0; };
+            readers.pcled = []() { return pcMonitor.isPCOn() ? 1 : 0; };
+            webRequestHandler.syncCurrentStates(readers);
+            // Design Ref: v2.6.2 §5.3 — attendance 부팅 초기 상태 fire (Plan SC-7)
+            attendanceHandler.syncOnBoot();
+            Serial.println("BootSync: syncCurrentStates() + attendanceSync() completed");
+            _bootSyncedOnce = true;
+        }
+    }
 
     // MQTT test: DNS resolution + task launch from main loop
     startMQTTTestTask();

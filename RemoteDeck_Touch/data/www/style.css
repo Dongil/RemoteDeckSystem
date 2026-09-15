@@ -1,10 +1,18 @@
-/* RemoteDeck_Touch web UI - PC 디자인 토큰 재사용 */
+/* RemoteDeck_Touch web UI · PC 디자인 토큰 + tab 추가 */
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:system-ui,-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;font-size:14px;min-height:100vh}
 header{background:#16213e;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 header h1{font-size:18px;color:#0ff;font-weight:bold}
 header span{font-size:12px;color:#888;font-family:monospace}
-main{padding:12px;max-width:900px;margin:0 auto}
+
+nav.tabs{background:#0f1830;padding:0;display:flex;gap:0;border-bottom:1px solid #2a3050}
+.tab{flex:1;text-align:center;background:transparent;border:none;color:#888;padding:14px 8px;cursor:pointer;font-size:14px;border-bottom:2px solid transparent;transition:all .15s}
+.tab:hover{color:#0ff}
+.tab.active{color:#0ff;border-bottom-color:#0ff}
+
+main{padding:12px 16px;max-width:none;margin:0}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
 
 .card{background:#16213e;border-radius:8px;padding:16px;margin-bottom:12px}
 .card h2{font-size:14px;color:#0ff;margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:6px}
@@ -12,8 +20,8 @@ main{padding:12px;max-width:900px;margin:0 auto}
 .card-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .img-card{background:#0a0e27;border-radius:6px;padding:12px;border:1px solid #2a3050}
 .img-card .role{font-size:12px;color:#0ff;font-weight:bold;text-transform:uppercase;margin-bottom:6px}
-.img-card .thumb{background:#000;border-radius:4px;height:80px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px}
-.img-card .thumb img{max-width:100%;max-height:100%;object-fit:contain}
+.img-card .thumb{background:#000;border-radius:4px;min-height:80px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px;padding:8px}
+.img-card .thumb img{max-width:100%;height:auto;display:block;image-rendering:pixelated}
 .img-card .thumb .placeholder{color:#444;font-size:11px}
 .img-card .meta{font-size:11px;color:#888;margin-bottom:8px;font-family:monospace}
 .img-card button{width:100%;padding:6px 12px;background:#0f3460;border:1px solid #0ff;color:#0ff;border-radius:4px;cursor:pointer;font-size:12px}
@@ -29,12 +37,79 @@ main{padding:12px;max-width:900px;margin:0 auto}
 .progress-bar{background:#0a0e27;border-radius:4px;height:20px;margin:10px 0;overflow:hidden;border:1px solid #2a3050}
 .progress-fill{background:linear-gradient(90deg,#0ff,#0a8);height:100%;width:0%;transition:width .3s;color:#000;text-align:center;font-size:12px;font-weight:bold;line-height:20px}
 
-.log-container{max-height:200px;overflow-y:auto;font-family:monospace;font-size:12px}
+/* Config tab */
+.config-editor{width:100%;background:#0a0e27;color:#e0e0e0;border:1px solid #2a3050;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;line-height:1.4;resize:vertical;min-height:280px}
+.config-view{background:#0a0e27;color:#bbb;border:1px solid #2a3050;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:280px;overflow:auto}
+.btn-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.btn-row button{padding:8px 16px;background:#0f3460;border:1px solid #0ff;color:#0ff;border-radius:4px;cursor:pointer;font-size:12px}
+.btn-row button:hover{background:#1a5276}
+.btn-row button.primary{background:#0ff;color:#000}
+.btn-row button.primary:hover{background:#0dd}
+.btn-row button.danger{border-color:#f44;color:#f44;background:transparent}
+.btn-row button.danger:hover{background:#3a1a1a}
+.btn-row .toggle{color:#aaa;font-size:12px;display:flex;align-items:center;gap:6px;margin-left:auto}
+.hint{margin-top:8px;color:#777;font-size:11px}
+
+/* Logs tab */
+.log-container{max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px;background:#0a0e27;border:1px solid #2a3050;border-radius:4px;padding:8px;margin-top:8px}
 .log-entry{padding:4px 0;border-bottom:1px solid #222}
 .log-entry .time{color:#888;margin-right:8px}
-.log-entry .event{color:#0ff;margin-right:8px}
+.log-entry .event{color:#0ff;margin-right:8px;font-weight:bold}
 .log-entry.ok .event{color:#0f0}
 .log-entry.fail .event{color:#f44}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#16213e;border:1px solid #0ff;color:#0ff;padding:12px 20px;border-radius:6px;font-size:13px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.4);max-width:90%}
 .toast.fail{border-color:#f44;color:#f44}
+
+/* Control tab */
+.ctrl-status{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.ctrl-indicator{display:flex;align-items:center;gap:14px;flex:1}
+.state-circle{width:48px;height:48px;border-radius:50%;background:#333;border:2px solid #555;transition:all .3s}
+.state-circle.in{background:#0a8;border-color:#0fa;box-shadow:0 0 20px #0fa}
+.state-circle.out{background:#a40;border-color:#fa0;box-shadow:0 0 20px #fa0}
+.state-label{font-size:20px;font-weight:bold;color:#888}
+.state-label.in{color:#0fa}
+.state-label.out{color:#fa0}
+.ctrl-meta{color:#888;font-size:12px;font-family:monospace;display:flex;flex-direction:column;gap:4px}
+.ctrl-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ctrl-btn{padding:24px;font-size:18px;font-weight:bold;border-radius:8px;cursor:pointer;background:#0a0e27;border:2px solid #2a3050;color:#aaa;transition:all .15s}
+.ctrl-btn:hover{transform:translateY(-2px)}
+.ctrl-btn.ctrl-in{border-color:#0fa;color:#0fa}
+.ctrl-btn.ctrl-in:hover,.ctrl-btn.ctrl-in.active{background:#0a8;color:#000}
+.ctrl-btn.ctrl-out{border-color:#fa0;color:#fa0}
+.ctrl-btn.ctrl-out:hover,.ctrl-btn.ctrl-out.active{background:#a40;color:#fff}
+
+/* v2.7 상태 탭 — PC 스타일 시스템 정보 (label: value 리스트) */
+.info-list{display:flex;flex-direction:column;gap:8px}
+.info-row{display:flex;gap:8px;font-size:14px;line-height:1.5}
+.info-row .k{color:#8a93a6;min-width:96px}
+.info-row .v{color:#0ff;font-family:monospace;word-break:break-all}
+.info-row .v.on{color:#4ac86e}
+.info-row .v.off{color:#f04a4a}
+
+/* v2.7 설정 sub-tabs — RemoteDeck_PC 스타일(전체폭 flex:1 + active 배경) */
+nav.sub-tabs{display:flex;background:#0d1b3e;border-radius:8px 8px 0 0;overflow-x:auto;margin-bottom:12px}
+.sub-tab{flex:1;padding:10px 12px;background:none;border:none;color:#666;cursor:pointer;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;transition:all .2s}
+.sub-tab:hover{color:#aaa}
+.sub-tab.active{color:#0ff;border-bottom-color:#0ff;background:#16213e}
+.sub-panel{display:none}
+.sub-panel.active{display:block}
+
+/* v2.7 설정 폼 (PC .cfg-group 스타일) */
+.cfg-sec{font-size:13px;color:#0ff;font-weight:bold;margin:18px 0 10px;padding-bottom:5px;border-bottom:1px solid #333}
+.cfg-sec:first-child{margin-top:0}
+.cfg-group{margin-bottom:12px}
+.cfg-group label{display:block;font-size:12px;color:#8a93a6;margin-bottom:4px}
+.cfg-group input,.cfg-group select{width:100%;max-width:340px;background:#0a0e27;color:#e0e0e0;border:1px solid #2a3050;border-radius:4px;padding:8px 10px;font-size:13px}
+.radio-group{display:flex;gap:20px;align-items:center;margin-bottom:12px}
+.radio-group label{color:#e0e0e0;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
+.chk{display:flex;align-items:center;gap:8px;color:#e0e0e0;font-size:13px;margin-bottom:12px;cursor:pointer}
+.time-row{display:flex;gap:16px;flex-wrap:wrap}
+.time-row .cfg-group input{max-width:130px}
+/* 저장 카드 — 폼 카드와 분리해 '탭 전체 저장' 인지 명확화 */
+.save-card{border-top:2px solid #0ff;text-align:center}
+.save-card .btn-row{justify-content:center}
+.save-card .btn-row button{min-width:220px;padding:12px}
+/* 재부팅 스케줄 요일 선택 */
+.weekday-row{display:flex;gap:14px;flex-wrap:wrap}
+.weekday-row label{display:flex;align-items:center;gap:5px;color:#e0e0e0;font-size:13px;cursor:pointer}

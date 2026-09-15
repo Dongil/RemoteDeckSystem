@@ -76,6 +76,15 @@ struct WebRequestConfig {
     std::string gpio2_low;
     std::string gpio3_high;
     std::string gpio3_low;
+    // Design Ref: RemoteDeck_PC_v2.6.1 §3.2 — Attendance URLs (fire pipeline 재사용)
+    std::string attendance_on;
+    std::string attendance_off;
+};
+
+// Design Ref: §3.1 — Attendance 시스템 설정. source = "pcled" | "gpio2"
+struct AttendanceConfig {
+    bool        enabled = false;
+    std::string source  = "pcled";
 };
 
 struct DeviceConfig {
@@ -91,6 +100,7 @@ struct DeviceConfig {
     FirmwareInfo firmware;
     AuthConfig auth;
     WebRequestConfig webRequest;
+    AttendanceConfig attendance;
 };
 
 constexpr const char* CONFIG_PATH    = "/deviceconfig.json";

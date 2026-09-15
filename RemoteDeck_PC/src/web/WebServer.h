@@ -24,6 +24,7 @@ public:
     using AuthChanger = std::function<bool(const String& curPass, const String& newUser, const String& newPass)>;
     using MQTTTestStarter = std::function<bool(const String& json)>;
     using MQTTTestGetter = std::function<String()>;
+    using AttendanceGetter = std::function<String()>;
 
     void setStatusGetter(StatusGetter cb) { _getStatus = cb; }
     void setRelayHandler(RelayHandler cb) { _handleRelay = cb; }
@@ -38,6 +39,7 @@ public:
     void setAuthChanger(AuthChanger cb) { _changeAuth = cb; }
     void setMQTTTestStarter(MQTTTestStarter cb) { _startMQTTTest = cb; }
     void setMQTTTestGetter(MQTTTestGetter cb) { _getMQTTTest = cb; }
+    void setAttendanceGetter(AttendanceGetter cb) { _getAttendance = cb; }
 
     OTAHandler& ota() { return _ota; }
 
@@ -60,6 +62,7 @@ private:
     AuthChanger _changeAuth = nullptr;
     MQTTTestStarter _startMQTTTest = nullptr;
     MQTTTestGetter _getMQTTTest = nullptr;
+    AttendanceGetter _getAttendance = nullptr;
 
     bool requireAuth(AsyncWebServerRequest* req);
     void setupStaticFiles();

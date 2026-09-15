@@ -24,6 +24,7 @@ void WebRequestHandler::fire(const char* event, int value) {
 
     RequestItem item{};
     strlcpy(item.url, url.c_str(), sizeof(item.url));
+    strlcpy(item.event, event, sizeof(item.event));   // v2.6.2 fix-1: 결과 콜백 라우팅용
     item.timeoutMs = _config->timeoutMs;
 
     if (xQueueSend(_queue, &item, 0) != pdTRUE) {
@@ -34,6 +35,23 @@ void WebRequestHandler::fire(const char* event, int value) {
             _onLog("WEBREQ", detail);
         }
     }
+}
+
+// Design Ref: §5.2 — one-shot 부팅 sync. 기존 fire() 파이프라인 재사용.
+// Plan SC-6/7: URL 미설정·reader unavailable 채널은 skip, 실패해도 부팅에 영향 없음.
+void WebRequestHandler::syncCurrentStates(const StateReaders& readers) {
+    auto tryFire = [&](const std::function<int()>& reader, const char* on, const char* off) {
+        if (!reader) return;
+        int v = reader();
+        if (v < 0) return;  // unavailable
+        const char* ev = (v == 1) ? on : off;
+        fire(ev, v);  // fire()가 URL 빈 채널은 자체 skip
+        if (_onLog) _onLog("BOOT_SYNC", ev);
+    };
+    tryFire(readers.gpio1, "gpio1_high", "gpio1_low");
+    tryFire(readers.gpio2, "gpio2_high", "gpio2_low");
+    tryFire(readers.gpio3, "gpio3_high", "gpio3_low");
+    tryFire(readers.pcled, "pcled_on",   "pcled_off");
 }
 
 String WebRequestHandler::getURL(const char* event) const {
@@ -49,6 +67,9 @@ String WebRequestHandler::getURL(const char* event) const {
     if (strcmp(event, "gpio2_low") == 0)  return String(_config->gpio2_low.c_str());
     if (strcmp(event, "gpio3_high") == 0) return String(_config->gpio3_high.c_str());
     if (strcmp(event, "gpio3_low") == 0)  return String(_config->gpio3_low.c_str());
+    // Design Ref: v2.6.1 §5.3 — Attendance URLs
+    if (strcmp(event, "attendance_on") == 0)  return String(_config->attendance_on.c_str());
+    if (strcmp(event, "attendance_off") == 0) return String(_config->attendance_off.c_str());
     return "";
 }
 
@@ -85,6 +106,7 @@ void WebRequestHandler::workerLoop() {
                 snprintf(detail, sizeof(detail), "BEGIN FAIL %s", item.url);
                 _onLog("WEBREQ", detail);
             }
+            if (_onResult) _onResult(item.event, -2);   // v2.6.2 fix-1: begin fail
             continue;
         }
 
@@ -99,6 +121,8 @@ void WebRequestHandler::workerLoop() {
             snprintf(detail, sizeof(detail), "[%d] %s", code, item.url);
             _onLog("WEBREQ", detail);
         }
+        // v2.6.2 fix-1: 이벤트별 결과 전파 (attendance 등 결과 반영용)
+        if (_onResult) _onResult(item.event, code);
         http.end();
     }
 }

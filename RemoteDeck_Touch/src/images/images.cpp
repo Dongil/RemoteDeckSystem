@@ -165,9 +165,14 @@ bool read_bmp_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
 }
 
 #if LV_USE_PNG
-// lv_conf.h 에서 LV_USE_PNG=1 설정 시 lvgl/extra/libs/png/lodepng 사용 가능
-// lodepng.h 는 자체적으로 namespace lodepng + C linkage 처리하므로 extern "C" 래핑 금지
-#include "extra/libs/png/lodepng.h"
+// lv_conf.h 에서 LV_USE_PNG=1 설정 시 lvgl/extra/libs/png/lodepng 사용
+// lodepng.h 가 namespace lodepng + LODEPNG_COMPILE_CPP 가지므로 헤더 전체 extern "C" 불가.
+// 사용하는 C 함수 2개만 명시 extern "C" 선언 — lodepng.c 의 C linkage 와 정합.
+extern "C" {
+    unsigned    lodepng_decode32(unsigned char** out, unsigned* w, unsigned* h,
+                                 const unsigned char* in, size_t insize);
+    const char* lodepng_error_text(unsigned code);
+}
 
 bool read_png_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
     File f = SPIFFS.open(filepath, "r");
@@ -175,11 +180,34 @@ bool read_png_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
         Serial.printf("PNG open failed: %s\n", filepath);
         return false;
     }
-
     size_t fileSize = f.size();
-    if (fileSize == 0) {
+    if (fileSize == 0 || fileSize < 33) { f.close(); return false; }
+
+    // v2.3 PNG hang fix: IHDR 사전 파싱으로 메모리 요구량 계산 후 heap 충분한지 확인.
+    //   peak 메모리 = fileBuf (fileSize) + rgba (w*h*4) + RGB565 (w*h*2) + 안전 마진 8KB
+    // PNG signature 8 byte + IHDR chunk: length(4)+"IHDR"(4)+data(13)+CRC(4).
+    //   IHDR data offset 16 부터 width(4) height(4) big-endian.
+    uint8_t hdr[24];
+    if (f.read(hdr, 24) != 24) { f.close(); return false; }
+    f.seek(0);  // rewind for full read below
+    if (hdr[0] != 0x89 || hdr[1] != 'P' || hdr[2] != 'N' || hdr[3] != 'G') {
+        Serial.println("PNG signature mismatch"); f.close(); return false;
+    }
+    uint32_t ihdr_w = (hdr[16]<<24) | (hdr[17]<<16) | (hdr[18]<<8) | hdr[19];
+    uint32_t ihdr_h = (hdr[20]<<24) | (hdr[21]<<16) | (hdr[22]<<8) | hdr[23];
+    if (ihdr_w == 0 || ihdr_h == 0 || ihdr_w > MAX_IMAGE_W || ihdr_h > MAX_IMAGE_H) {
+        Serial.printf("PNG reject size %ux%u (max %ux%u)\n",
+                      (unsigned)ihdr_w, (unsigned)ihdr_h, (unsigned)MAX_IMAGE_W, (unsigned)MAX_IMAGE_H);
+        f.close(); return false;
+    }
+    size_t need = fileSize + (size_t)ihdr_w * ihdr_h * 4 + (size_t)ihdr_w * ihdr_h * 2 + 8192;
+    size_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < need) {
+        Serial.printf("PNG skip %s: need=%u heap=%u (w=%u h=%u file=%u)\n",
+                      filepath, (unsigned)need, (unsigned)freeHeap,
+                      (unsigned)ihdr_w, (unsigned)ihdr_h, (unsigned)fileSize);
         f.close();
-        return false;
+        return false;  // BMP fallback 으로 진행
     }
 
     uint8_t* fileBuf = (uint8_t*)malloc(fileSize);

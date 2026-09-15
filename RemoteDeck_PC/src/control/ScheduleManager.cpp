@@ -21,9 +21,13 @@ void ScheduleManager::loop() {
 
     for (const auto& s : _schedules) {
         if (s.enabled && shouldExecute(s, weekday, hour, currentMinute)) {
-            Serial.printf("Schedule #%d triggered: relay%d %s\n", s.id, s.relay, s.action.c_str());
-            if (_onAction) {
-                _onAction(s.relay, s.action);
+            // Design Ref: §5.1 — reboot은 별도 콜백으로 dispatch
+            if (s.action == "reboot") {
+                Serial.printf("Schedule #%d triggered: reboot\n", s.id);
+                if (_onReboot) _onReboot();
+            } else {
+                Serial.printf("Schedule #%d triggered: relay%d %s\n", s.id, s.relay, s.action.c_str());
+                if (_onAction) _onAction(s.relay, s.action);
             }
         }
     }
@@ -126,6 +130,11 @@ bool ScheduleManager::fromJson(const String& json) {
         s.days = v["days"];
         s.action = v["action"].as<std::string>();
         s.relay = v["relay"];
+        // Design Ref: §5.1 하위호환 — 알 수 없는 action은 skip
+        if (s.action != "on" && s.action != "off" && s.action != "toggle" && s.action != "reboot") {
+            Serial.printf("Schedule: unknown action '%s', skipping id=%u\n", s.action.c_str(), s.id);
+            continue;
+        }
         _schedules.push_back(s);
     }
     return true;

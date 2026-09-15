@@ -7,7 +7,7 @@ RemoteDeck_Touch/.vscode/
 # .NET
 IPSetupTool/**/bin/
 IPSetupTool/**/obj/
-IPSetupTool/publish/
+IPSetupTool/**/publish/
 APITestUtility_v2/**/bin/
 APITestUtility_v2/**/obj/
 APITestUtility_v2/**/publish/

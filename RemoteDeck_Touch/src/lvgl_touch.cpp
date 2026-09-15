@@ -16,8 +16,15 @@ static int screen_timeout = 60000; // 1분 타임아웃 (60,000ms)
 static bool screen_protected = false; // 화면 보호 상태 플래그
 static lv_obj_t* last_screen = NULL; // 마지막 화면 저장 객체
 
+// v2.7: 야간 화면 끄기 (스크린세이버 메커니즘 재사용, 시간대 기반)
+static bool night_active = false;              // main 이 NTP 로 판정한 야간 창 상태
+static const uint32_t NIGHT_WAKE_MS = 10000;   // 야간 중 터치 wake 후 재off 대기(10s)
+void lvgl_set_night_active(bool a) { night_active = a; }
+
 void disable_events(lv_obj_t* obj);  //화면보호시 이벤트 작동안하기
 void enable_events(lv_obj_t* obj);   //기존 화면 복원시 이벤트
+void activate_screen_protection();     // v2.7: fwd decl
+void deactivate_screen_protection();   // v2.7: fwd decl (창 종료/터치 시 복원)
 
 int getTouch(uint16_t *pPoints)
 {
@@ -65,22 +72,13 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
     }
     else
     {
-        //화면보호기 사용하면 실행
-        if(sleep_using){            
-            //화면보호기 부분 추가
+        // 화면보호기(무활동) 또는 야간 화면 끄기 중 터치 → wake
+        if(sleep_using || night_active){
             last_touch_time = millis(); // 터치 이벤트 시 시간 갱신
-            
             if (screen_protected)
             {
-                // 화면 보호 해제
-                screen_protected = false;
-                if (last_screen)
-                {
-                    lv_scr_load(last_screen); // 저장된 마지막 화면 복원
-                    last_screen = NULL;      // 복원 후 마지막 화면 참조 제거
-                    digitalWrite(TFT_BACKLIGHT_ON, HIGH); // 백라이트 끄기
-                    return;
-                }
+                deactivate_screen_protection();  // 화면 복원 + 백라이트 on
+                return;                           // 이 터치는 wake 용으로 소비
             }
         }
 
@@ -111,7 +109,22 @@ void activate_screen_protection()
         lv_obj_t *black_screen = lv_obj_create(NULL); // 새로운 화면 생성
         lv_obj_set_style_bg_color(black_screen, lv_color_black(), LV_PART_MAIN); // 검정색 배경
         lv_scr_load(black_screen); // 블랙 화면 로드
-        digitalWrite(TFT_BACKLIGHT_ON, LOW); // 백라이트 끄기
+        digitalWrite(TFT_BACKLIGHT_ON, LOW); // 백라이트 끄기(off)
+    }
+}
+
+// v2.7: 화면 보호 해제 (복원 + 백라이트 on) — 터치 wake / 야간 창 종료 시 호출
+void deactivate_screen_protection()
+{
+    if (screen_protected)
+    {
+        screen_protected = false;
+        if (last_screen)
+        {
+            lv_scr_load(last_screen); // 저장된 마지막 화면 복원
+            last_screen = NULL;
+        }
+        digitalWrite(TFT_BACKLIGHT_ON, HIGH); // 백라이트 on
     }
 }
 
@@ -145,6 +158,33 @@ void lvgl_touch_init(uint16_t screenWidth, uint16_t screenHeight)
     delay(100);
 }
 
+// v2.6: 웹 설정 모드 정적 안내화면 — TFT 만 init 후 1회 렌더. LVGL/터치/ui 미사용.
+//   웹모드 loop 에는 lv_timer_handler 가 없어 이후 tft 무접근 → 웹서버 서비스 중 SPI 경합 없음.
+void lcd_show_webmode_info(const char* ip)
+{
+    tft.begin();
+    tft.setRotation(180);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.setCursor(8, 24);
+    tft.println("WEB CONFIG");
+    tft.setCursor(8, 48);
+    tft.println("MODE");
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextSize(1);
+    tft.setCursor(8, 96);
+    tft.print("URL : http://");
+    tft.println(ip);
+    tft.setCursor(8, 116);
+    tft.println("Auth: admin / 12345");
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.setCursor(8, 152);
+    tft.println("Reboot from web to");
+    tft.setCursor(8, 168);
+    tft.println("return to LCD mode.");
+}
+
 void screen_saver_init(int timeout){
     
     if(timeout != 0)
@@ -163,12 +203,13 @@ void lvgl_loop()
     lv_timer_handler(); // LVGL 작업 처리
     delay(5);
 
-    // 화면 보호 모드 활성화 확인
-    if(sleep_using)
-    {
-        if (!screen_protected && (millis() - last_touch_time > screen_timeout))
-        {
-            activate_screen_protection();
-        }
+    // 화면 off 조건: 스크린세이버(무활동) 또는 야간 화면 끄기(시간대). 둘 다 아니면 복원.
+    bool wantOff = false;
+    if (sleep_using  && (millis() - (uint32_t)last_touch_time > (uint32_t)screen_timeout)) wantOff = true;
+    if (night_active && (millis() - (uint32_t)last_touch_time > NIGHT_WAKE_MS))            wantOff = true;
+    if (wantOff) {
+        if (!screen_protected) activate_screen_protection();
+    } else {
+        if (screen_protected) deactivate_screen_protection();  // 야간 창 종료/무활동 해제 시 복원
     }
 }

@@ -632,7 +632,13 @@
 #endif
 
 /*PNG decoder library*/
-// TODO(v2): lv_png_init() + LVGL FS driver 등록 방식으로 전환 후 1로 변경
+/* v2.3 PNG sub-task: 활성 시도 후 LCD touch race 발현 → 안전 위해 비활성 유지.
+ * - 작은 PNG (32x32) round-trip OK
+ * - 큰 PNG (240x86) heap OOM 우려 → IHDR check 로 skip 가능
+ * - BUT decode 시도 자체가 LVGL indev (touch) state 손상 의심
+ *   (main loop 의 imageApi.loop → images_update → try_set 도중 lv_timer_handler 끊김)
+ * 별도 작업: LVGL 의 lv_png_init() 활용 + LVGL native decoder chain 사용, 또는
+ *           PNG decode 를 별도 task 로 분리 (LVGL state 격리). */
 #define LV_USE_PNG 0
 
 /*BMP decoder library*/

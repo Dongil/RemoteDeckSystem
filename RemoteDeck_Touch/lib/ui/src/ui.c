@@ -59,11 +59,8 @@ lv_obj_t * ui_Label15;
 void ui_event_txtaServerurl(lv_event_t * e);
 lv_obj_t * ui_txtaServerurl;
 lv_obj_t * ui_Label24;
-lv_obj_t * ui_Label25;
 lv_obj_t * ui_dropSleep;
 lv_obj_t * ui_Label26;
-lv_obj_t * ui_dropReboot;
-lv_obj_t * ui_Label27;
 
 
 // SCREEN: ui_ScreenEthernet
