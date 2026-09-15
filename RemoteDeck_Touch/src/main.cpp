@@ -260,6 +260,24 @@ void loop()
 
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
+    // v2.7 S4a: 재부팅 스케줄 (NTP currentTime=UTC+9, LCD 모드에서만). 분당 1회 중복 방지.
+    if (deviceConfig.rebootSchedule.enabled && currentTime > 0) {
+        struct tm* t = gmtime(&currentTime);
+        if (t) {
+            static int lastSchedKey = -1;
+            int key = t->tm_hour * 60 + t->tm_min;
+            if (deviceConfig.rebootSchedule.days[t->tm_wday]
+                && t->tm_hour == deviceConfig.rebootSchedule.hour
+                && t->tm_min  == deviceConfig.rebootSchedule.minute
+                && key != lastSchedKey) {
+                lastSchedKey = key;
+                Serial.println("[v2.7] 재부팅 스케줄 도달 — 재부팅");
+                delay(100);
+                ESP.restart();
+            }
+        }
+    }
+
     // Mqtt 사용시
     if(ethernet_conn){
         mqttEthernet_loop();          // MQTT keep alive

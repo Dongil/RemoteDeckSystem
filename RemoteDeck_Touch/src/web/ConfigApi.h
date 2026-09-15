@@ -25,6 +25,10 @@ public:
     String readServerConfigJson() const;
     bool   writeServerConfigJson(const String& body, String& errOut);
 
+    // v2.7: /api/schedule GET/POST — deviceconfig 내 reboot_schedule 만 read / merge-write
+    String readScheduleJson() const;
+    bool   writeScheduleJson(const String& body, String& errOut);
+
     // /api/reboot — 메인 루프에서 ESP.restart() 처리 위한 flag
     void   requestReboot()       { _rebootRequested = true; }
     bool   pendingReboot() const { return _rebootRequested; }

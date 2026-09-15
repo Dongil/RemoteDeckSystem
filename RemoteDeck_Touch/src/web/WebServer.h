@@ -52,6 +52,8 @@ public:
     void setDeviceConfigSetter(DeviceConfigSetter cb)   { _setDeviceConfig = cb; }
     void setServerConfigGetter(DeviceConfigGetter cb)   { _getServerConfig = cb; }   // v2.7
     void setServerConfigSetter(DeviceConfigSetter cb)   { _setServerConfig = cb; }   // v2.7
+    void setScheduleGetter(DeviceConfigGetter cb)       { _getSchedule = cb; }       // v2.7
+    void setScheduleSetter(DeviceConfigSetter cb)       { _setSchedule = cb; }       // v2.7
     void setLogJsonGetter(LogJsonGetter cb)             { _getLogJson      = cb; }
     void setRebootHandler(RebootHandler cb)             { _onReboot        = cb; }
     void setOtaStarter(OtaStarter cb)                   { _otaStart        = cb; }
@@ -77,6 +79,8 @@ private:
     DeviceConfigSetter   _setDeviceConfig = nullptr;
     DeviceConfigGetter   _getServerConfig = nullptr;   // v2.7
     DeviceConfigSetter   _setServerConfig = nullptr;   // v2.7
+    DeviceConfigGetter   _getSchedule = nullptr;       // v2.7
+    DeviceConfigSetter   _setSchedule = nullptr;       // v2.7
     LogJsonGetter        _getLogJson      = nullptr;
     RebootHandler        _onReboot        = nullptr;
     OtaStarter           _otaStart        = nullptr;
@@ -111,6 +115,8 @@ private:
     static esp_err_t trampolineImagesConfig(httpd_req_t* req);
     static esp_err_t trampolineServerConfigGet(httpd_req_t* req);   // v2.7
     static esp_err_t trampolineServerConfigPost(httpd_req_t* req);  // v2.7
+    static esp_err_t trampolineScheduleGet(httpd_req_t* req);       // v2.7
+    static esp_err_t trampolineSchedulePost(httpd_req_t* req);      // v2.7
     static esp_err_t trampolineConfigGet(httpd_req_t* req);
     static esp_err_t trampolineConfigPost(httpd_req_t* req);
     static esp_err_t trampolineLog(httpd_req_t* req);
@@ -131,6 +137,8 @@ private:
     esp_err_t handleImagesConfig(httpd_req_t* req);
     esp_err_t handleServerConfigGet(httpd_req_t* req);    // v2.7
     esp_err_t handleServerConfigPost(httpd_req_t* req);   // v2.7
+    esp_err_t handleScheduleGet(httpd_req_t* req);        // v2.7
+    esp_err_t handleSchedulePost(httpd_req_t* req);       // v2.7
     esp_err_t handleConfigGet(httpd_req_t* req);
     esp_err_t handleConfigPost(httpd_req_t* req);
     esp_err_t handleLog(httpd_req_t* req);

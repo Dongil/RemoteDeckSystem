@@ -2,8 +2,8 @@
 
 // DeviceConfig 직렬화
 bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output) {
-    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다.
-    StaticJsonDocument<1024> doc;
+    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다. (v2.7: night_off/reboot_schedule 여유)
+    StaticJsonDocument<2048> doc;
 
     // DeviceConfig 데이터를 JSON 형태로 변환합니다.
     doc["device_id"] = config.deviceID.c_str();
@@ -35,6 +35,14 @@ bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output
     night["end_hour"]     = config.nightOff.endHour;
     night["end_minute"]   = config.nightOff.endMinute;
 
+    // v2.7: 재부팅 스케줄
+    JsonObject rs = doc.createNestedObject("reboot_schedule");
+    rs["enabled"] = config.rebootSchedule.enabled;
+    JsonArray rdays = rs.createNestedArray("days");
+    for (int i = 0; i < 7; i++) if (config.rebootSchedule.days[i]) rdays.add(i);
+    rs["hour"]    = config.rebootSchedule.hour;
+    rs["minute"]  = config.rebootSchedule.minute;
+
     // VersionInfo 구조체를 저장합니다.
     JsonObject version = doc.createNestedObject("version_info");
     version["firmware_date"] = config.versionInfo.firmwareDate.c_str();
@@ -48,8 +56,8 @@ bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output
 
 // DeviceConfig 역직렬화
 bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json) {
-    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다.
-    StaticJsonDocument<1024> doc;
+    // JSON 문서를 저장할 StaticJsonDocument를 선언합니다. (v2.7: night_off/reboot_schedule 여유)
+    StaticJsonDocument<2048> doc;
 
     // JSON 문자열을 파싱합니다.
     DeserializationError error = deserializeJson(doc, json);
@@ -88,6 +96,16 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
     config.nightOff.startMinute = doc["night_off"]["start_minute"] | 0;
     config.nightOff.endHour     = doc["night_off"]["end_hour"] | 6;
     config.nightOff.endMinute   = doc["night_off"]["end_minute"] | 0;
+
+    // v2.7: 재부팅 스케줄 (부재 시 default — 하위호환)
+    config.rebootSchedule.enabled = doc["reboot_schedule"]["enabled"] | false;
+    for (int i = 0; i < 7; i++) config.rebootSchedule.days[i] = false;
+    JsonArray rdays = doc["reboot_schedule"]["days"];
+    if (!rdays.isNull()) {
+        for (JsonVariant v : rdays) { int d = v.as<int>(); if (d >= 0 && d < 7) config.rebootSchedule.days[d] = true; }
+    }
+    config.rebootSchedule.hour   = doc["reboot_schedule"]["hour"] | 4;
+    config.rebootSchedule.minute = doc["reboot_schedule"]["minute"] | 0;
 
     // VersionInfo 구조체를 로드합니다.
     JsonObject version = doc["version_info"];

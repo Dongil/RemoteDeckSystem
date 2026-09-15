@@ -15,6 +15,7 @@ function activateTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'status') renderStatusTab();
   if (name === 'logs') refreshLog();
+  if (name === 'admin' && !_schedLoaded) loadSchedule();
   if (name === 'settings') {   // 설정 진입 시 현재 활성 sub-tab 로드 (첫 진입 시 device 채움)
     const act = document.querySelector('.sub-tab.active');
     activateSubTab(act ? act.dataset.sub : 'device');
@@ -262,6 +263,27 @@ async function uploadOta() {
   }
 }
 
+// v2.7 S4a: 재부팅 스케줄 (/api/schedule = deviceconfig.reboot_schedule)
+let _schedLoaded = false;
+async function loadSchedule() {
+  try {
+    const r = await fetch('/api/schedule');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const s = await r.json();
+    $('schEn').checked = !!s.enabled;
+    const days = s.days || [];
+    document.querySelectorAll('.schDay').forEach(c => c.checked = days.includes(parseInt(c.value)));
+    setVal('schTime', hm(s.hour == null ? 4 : s.hour, s.minute));
+    _schedLoaded = true;
+  } catch (e) { toast('스케줄 로드 실패: ' + e.message, true); }
+}
+async function saveSchedule() {
+  const days = [];
+  document.querySelectorAll('.schDay').forEach(c => { if (c.checked) days.push(parseInt(c.value)); });
+  const t = parseHm(val('schTime'));
+  await postConfig('/api/schedule', { enabled: $('schEn').checked, days, hour: t[0], minute: t[1] }, '재부팅 스케줄');
+}
+
 // ---------- Logs Tab ----------
 let logAutoInterval = null;
 
@@ -312,6 +334,7 @@ async function init() {
   $('btnOut').addEventListener('click', () => toggleControl('out'));
   $('btnReboot').addEventListener('click', rebootDevice);
   $('otaUpload').addEventListener('click', uploadOta);
+  $('schSave').addEventListener('click', saveSchedule);
   $('dcSave').addEventListener('click', saveDeviceConfig);
   $('scSave').addEventListener('click', saveServerConfig);
   $('logRefresh').addEventListener('click', refreshLog);

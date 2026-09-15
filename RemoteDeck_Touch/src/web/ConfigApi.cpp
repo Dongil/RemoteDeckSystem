@@ -25,6 +25,11 @@ void ConfigApi::attach(WebServer* ws) {
     ws->setServerConfigSetter([this](const String& body, String& err) {
         return writeServerConfigJson(body, err);
     });
+    // v2.7: schedule getter/setter (deviceconfig 내 reboot_schedule)
+    ws->setScheduleGetter([this]() { return readScheduleJson(); });
+    ws->setScheduleSetter([this](const String& body, String& err) {
+        return writeScheduleJson(body, err);
+    });
 }
 
 String ConfigApi::readDeviceConfigJson() const {
@@ -110,6 +115,49 @@ bool ConfigApi::writeServerConfigJson(const String& body, String& errOut) {
         errOut = "rename_failed";
         return false;
     }
+    return true;
+}
+
+// v2.7: schedule = deviceconfig 내 reboot_schedule 서브트리 read / merge
+String ConfigApi::readScheduleJson() const {
+    DynamicJsonDocument doc(3072);
+    File f = SPIFFS.open(DEVICE_CONFIG_PATH, "r");
+    if (f) {
+        deserializeJson(doc, f);
+        f.close();
+    }
+    JsonVariant rs = doc["reboot_schedule"];
+    String out;
+    if (rs.isNull()) {
+        out = "{\"enabled\":false,\"days\":[],\"hour\":4,\"minute\":0}";
+    } else {
+        serializeJson(rs, out);
+    }
+    return out;
+}
+
+bool ConfigApi::writeScheduleJson(const String& body, String& errOut) {
+    // 1) body(schedule) 검증
+    StaticJsonDocument<512> sched;
+    if (deserializeJson(sched, body)) { errOut = "invalid_json"; return false; }
+    // 2) deviceconfig 로드 후 reboot_schedule 병합
+    DynamicJsonDocument doc(4096);
+    File rf = SPIFFS.open(DEVICE_CONFIG_PATH, "r");
+    if (!rf) { errOut = "device_config_open_failed"; return false; }
+    DeserializationError de = deserializeJson(doc, rf);
+    rf.close();
+    if (de) { errOut = String("device_config_parse:") + de.f_str(); return false; }
+    doc["reboot_schedule"] = sched.as<JsonObjectConst>();   // 서브트리 교체(deep copy)
+    // 3) atomic write
+    String out;
+    serializeJson(doc, out);
+    File f = SPIFFS.open("/deviceconfig.json.tmp", FILE_WRITE);
+    if (!f) { errOut = "open_tmp_failed"; return false; }
+    size_t w = f.print(out);
+    f.flush(); f.close();
+    if (w != out.length()) { SPIFFS.remove("/deviceconfig.json.tmp"); errOut = "short_write"; return false; }
+    SPIFFS.remove(DEVICE_CONFIG_PATH);
+    if (!SPIFFS.rename("/deviceconfig.json.tmp", DEVICE_CONFIG_PATH)) { errOut = "rename_failed"; return false; }
     return true;
 }
 

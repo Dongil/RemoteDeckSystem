@@ -33,6 +33,14 @@ struct NightOffConfig {
     int endMinute = 0;
 };
 
+// v2.7: 재부팅 스케줄 (단일 주간, NTP 기반 — Design §3.2)
+struct RebootScheduleConfig {
+    bool enabled = false;
+    bool days[7] = { false, false, false, false, false, false, false };  // 0=일 … 6=토
+    int hour = 4;
+    int minute = 0;
+};
+
 class DeviceConfig {
 public:
     std::string deviceID;
@@ -43,4 +51,5 @@ public:
     VersionInfo versionInfo;
     bool webConfigMode = false;   // v2.6: 다음 부팅을 웹 설정 모드로 (부팅 시 소비, Design §3.1)
     NightOffConfig nightOff;      // v2.7: 야간 화면 끄기 (Design §3.2b)
+    RebootScheduleConfig rebootSchedule;  // v2.7: 재부팅 스케줄 (Design §3.2)
 };

@@ -168,6 +168,8 @@ void WebServer::registerHandlers() {
     reg("/api/config",       HTTP_POST,   &WebServer::trampolineConfigPost);
     reg("/api/serverconfig", HTTP_GET,    &WebServer::trampolineServerConfigGet);   // v2.7
     reg("/api/serverconfig", HTTP_POST,   &WebServer::trampolineServerConfigPost);  // v2.7
+    reg("/api/schedule",     HTTP_GET,    &WebServer::trampolineScheduleGet);       // v2.7
+    reg("/api/schedule",     HTTP_POST,   &WebServer::trampolineSchedulePost);      // v2.7
     reg("/api/log",          HTTP_GET,    &WebServer::trampolineLog);
     reg("/api/reboot",       HTTP_POST,   &WebServer::trampolineReboot);
     reg("/api/ota",          HTTP_POST,   &WebServer::trampolineOtaUpload);
@@ -194,6 +196,8 @@ TRAMP(trampolineConfigGet,    handleConfigGet)
 TRAMP(trampolineConfigPost,   handleConfigPost)
 TRAMP(trampolineServerConfigGet,  handleServerConfigGet)
 TRAMP(trampolineServerConfigPost, handleServerConfigPost)
+TRAMP(trampolineScheduleGet,  handleScheduleGet)
+TRAMP(trampolineSchedulePost, handleSchedulePost)
 TRAMP(trampolineLog,          handleLog)
 TRAMP(trampolineReboot,       handleReboot)
 TRAMP(trampolineOtaUpload,    handleOtaUpload)
@@ -305,6 +309,46 @@ esp_err_t WebServer::handleServerConfigPost(httpd_req_t* req) {
         char e[160];
         snprintf(e, sizeof(e), "{\"ok\":false,\"error\":\"%s\"}", err.c_str());
         logEvent("SVRCFG_SAVE", err.c_str());
+        sendJson(req, 400, e);
+    }
+    return ESP_OK;
+}
+// v2.7: /api/schedule (deviceconfig 내 reboot_schedule)
+esp_err_t WebServer::handleScheduleGet(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (_getSchedule) sendJsonString(req, 200, _getSchedule());
+    else              sendJson(req, 500, "{\"ok\":false}");
+    return ESP_OK;
+}
+esp_err_t WebServer::handleSchedulePost(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (!_setSchedule) { sendJson(req, 500, "{\"ok\":false,\"error\":\"no_handler\"}"); return ESP_OK; }
+    if (req->content_len == 0 || req->content_len > 4096) {
+        sendJson(req, 413, "{\"ok\":false,\"error\":\"too_large\"}");
+        return ESP_OK;
+    }
+    String body; body.reserve(req->content_len + 4);
+    char buf[513];
+    size_t remain = req->content_len;
+    while (remain > 0) {
+        int r = httpd_req_recv(req, buf, remain > 512 ? 512 : remain);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            sendJson(req, 500, "{\"ok\":false,\"error\":\"recv_failed\"}");
+            return ESP_OK;
+        }
+        buf[r] = 0;
+        body += buf;
+        remain -= r;
+    }
+    String err;
+    if (_setSchedule(body, err)) {
+        logEvent("SCHED_SAVE", "ok");
+        sendJson(req, 200, "{\"ok\":true}");
+    } else {
+        char e[160];
+        snprintf(e, sizeof(e), "{\"ok\":false,\"error\":\"%s\"}", err.c_str());
+        logEvent("SCHED_SAVE", err.c_str());
         sendJson(req, 400, e);
     }
     return ESP_OK;
