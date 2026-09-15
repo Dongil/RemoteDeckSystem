@@ -230,6 +230,16 @@ void setup()
 // v2.1 C4: HTTPClient (ESP32 내장) - lwIP 위에서 ETH/WiFi 모두 동작
 HTTPClient http;
 
+// v2.7 S4b: 야간 화면 끄기 창 판정 (자정 wrap 지원)
+static bool inNightWindow(const NightOffConfig& n, const struct tm* t) {
+    int now   = t->tm_hour * 60 + t->tm_min;
+    int start = n.startHour * 60 + n.startMinute;
+    int end   = n.endHour * 60 + n.endMinute;
+    if (start == end) return false;                  // 동일 = 사용 안함
+    if (start < end)  return (now >= start && now < end);
+    return (now >= start || now < end);              // 자정 넘김(예: 22:00~06:00)
+}
+
 void loop()
 {
     delay(10);
@@ -276,6 +286,16 @@ void loop()
                 ESP.restart();
             }
         }
+    }
+
+    // v2.7 S4b: 야간 화면 끄기 (NTP currentTime 기준, LCD 모드)
+    {
+        bool nightActive = false;
+        if (deviceConfig.nightOff.enabled && currentTime > 0) {
+            struct tm* nt = gmtime(&currentTime);
+            if (nt) nightActive = inNightWindow(deviceConfig.nightOff, nt);
+        }
+        lvgl_set_night_active(nightActive);
     }
 
     // Mqtt 사용시
