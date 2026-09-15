@@ -124,6 +124,7 @@ async function fetchStatus() {
     lastStatus = s;
     $('statusBar').textContent =
       `${s.network.iface} ${s.network.ip} · heap ${fmtBytes(s.heap_free)} · v${s.fw_version}`;
+    const ov = $('otaCurVer'); if (ov) ov.textContent = `v${s.fw_version} (${s.fw_date || '-'})`;
     if ($('tab-status').classList.contains('active')) renderStatusTab();
   } catch (e) {
     $('statusBar').textContent = 'status error: ' + e.message;
@@ -215,6 +216,52 @@ async function rebootDevice() {
   }
 }
 
+// v2.7 S3: 펌웨어 OTA (기존 /api/ota 재활용)
+async function uploadOta() {
+  const f = $('otaFile').files[0];
+  if (!f) { toast('OTA bin 파일을 선택하세요', true); return; }
+  if (!f.name.toLowerCase().endsWith('.bin')) { toast('.bin 파일만 업로드 가능', true); return; }
+  if (f.size > 1900 * 1024) { toast(`파일 크기 초과: ${(f.size/1024).toFixed(0)}KB (최대 ~1.85MB)`, true); return; }
+  if (!confirm(`${f.name} (${(f.size/1024).toFixed(0)}KB) 업로드 후 자동 재부팅됩니다. 진행하시겠습니까?`)) return;
+  const fd = new FormData(); fd.append('file', f);
+  const bar = $('otaProgress'), fill = $('otaFill'), msg = $('otaMsg');
+  bar.hidden = false; fill.style.width = '0%'; fill.textContent = '0%';
+  msg.textContent = '업로드 중...';
+  const done = () => { fill.style.width = '100%'; fill.textContent = '100%'; };
+  try {
+    const status = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/ota');
+      xhr.timeout = 120000;
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          // 업로드 완료(전송 100%) 시점에 100% 채움 — 이후 단말이 flash 쓰고 reboot.
+          const p = Math.round(e.loaded * 100 / e.total);
+          fill.style.width = p + '%'; fill.textContent = p + '%';
+        }
+      };
+      xhr.onload = () => resolve(xhr.status);
+      xhr.onerror = () => reject(new Error('drop'));       // 단말 reboot 로 연결 끊김 = 성공 신호
+      xhr.ontimeout = () => reject(new Error('timeout'));
+      xhr.send(fd);
+    });
+    if (status >= 200 && status < 300) {
+      done();
+      msg.textContent = '✅ OTA 완료 — 단말 재부팅(→ LCD 모드). 웹 재사용 시 다시 웹 설정 모드로 진입하세요.';
+      toast('OTA 완료 — 재부팅 중');
+    } else {
+      fill.textContent = '실패';
+      msg.textContent = 'OTA 실패 (HTTP ' + status + ') — 단말 로그를 확인하세요.';
+      toast('OTA 실패 (HTTP ' + status + ')', true);
+    }
+  } catch (e) {
+    // 업로드 직후 단말 reboot 로 연결이 끊기는 것은 정상(성공 신호) → 100% 표시.
+    done();
+    msg.textContent = '✅ 업로드 완료 — 연결 끊김은 재부팅 신호입니다. 단말이 LCD 모드로 전환됩니다.';
+    toast('OTA 완료 — 재부팅 중', false, 5000);
+  }
+}
+
 // ---------- Logs Tab ----------
 let logAutoInterval = null;
 
@@ -264,6 +311,7 @@ async function init() {
   $('btnIn').addEventListener('click', () => toggleControl('in'));
   $('btnOut').addEventListener('click', () => toggleControl('out'));
   $('btnReboot').addEventListener('click', rebootDevice);
+  $('otaUpload').addEventListener('click', uploadOta);
   $('dcSave').addEventListener('click', saveDeviceConfig);
   $('scSave').addEventListener('click', saveServerConfig);
   $('logRefresh').addEventListener('click', refreshLog);

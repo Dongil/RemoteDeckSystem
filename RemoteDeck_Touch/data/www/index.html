@@ -143,7 +143,18 @@
       <div class="btn-row">
         <button id="btnReboot" class="danger">즉시 재부팅</button>
       </div>
-      <p class="hint">재부팅 스케줄(S4) · 펌웨어 OTA(S3)는 후속 세션에서 추가됩니다.</p>
+      <p class="hint">재부팅 스케줄은 S4에서 추가됩니다.</p>
+    </div>
+    <div class="card">
+      <h2>펌웨어 업데이트 (OTA)</h2>
+      <div class="info-row"><span class="k">현재 버전</span><span class="v" id="otaCurVer">-</span></div>
+      <p class="hint">PlatformIO 빌드의 OTA bin (firmware.bin, ~1.8MB) 선택. 업로드 완료 후 자동 재부팅(→ LCD 모드). 버전은 파일명이 아닌 펌웨어 내부 스탬프에서 표시됩니다.</p>
+      <div class="cfg-group"><input type="file" id="otaFile" accept=".bin"></div>
+      <div class="btn-row"><button id="otaUpload" class="primary">OTA 업로드</button></div>
+      <div class="progress-bar" id="otaProgress" hidden>
+        <div class="progress-fill" id="otaFill">0%</div>
+      </div>
+      <div id="otaMsg" class="hint"></div>
     </div>
   </section>
 
