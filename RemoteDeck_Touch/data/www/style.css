@@ -94,3 +94,19 @@ nav.sub-tabs{display:flex;background:#0d1b3e;border-radius:8px 8px 0 0;overflow-
 .sub-tab.active{color:#0ff;border-bottom-color:#0ff;background:#16213e}
 .sub-panel{display:none}
 .sub-panel.active{display:block}
+
+/* v2.7 설정 폼 (PC .cfg-group 스타일) */
+.cfg-sec{font-size:13px;color:#0ff;font-weight:bold;margin:18px 0 10px;padding-bottom:5px;border-bottom:1px solid #333}
+.cfg-sec:first-child{margin-top:0}
+.cfg-group{margin-bottom:12px}
+.cfg-group label{display:block;font-size:12px;color:#8a93a6;margin-bottom:4px}
+.cfg-group input,.cfg-group select{width:100%;max-width:340px;background:#0a0e27;color:#e0e0e0;border:1px solid #2a3050;border-radius:4px;padding:8px 10px;font-size:13px}
+.radio-group{display:flex;gap:20px;align-items:center;margin-bottom:12px}
+.radio-group label{color:#e0e0e0;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
+.chk{display:flex;align-items:center;gap:8px;color:#e0e0e0;font-size:13px;margin-bottom:12px;cursor:pointer}
+.time-row{display:flex;gap:16px;flex-wrap:wrap}
+.time-row .cfg-group input{max-width:130px}
+/* 저장 카드 — 폼 카드와 분리해 '탭 전체 저장' 인지 명확화 */
+.save-card{border-top:2px solid #0ff;text-align:center}
+.save-card .btn-row{justify-content:center}
+.save-card .btn-row button{min-width:220px;padding:12px}

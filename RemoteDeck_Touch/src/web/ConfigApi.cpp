@@ -8,6 +8,7 @@
 
 static const char* DEVICE_CONFIG_PATH = "/deviceconfig.json";
 static const char* IMAGES_CONFIG_PATH = "/imagesconfig.json";
+static const char* SERVER_CONFIG_PATH = "/serverconfig.json";   // v2.7
 
 void ConfigApi::attach(WebServer* ws) {
     if (!ws) return;
@@ -19,6 +20,11 @@ void ConfigApi::attach(WebServer* ws) {
         return writeDeviceConfigJson(body, err);
     });
     ws->setRebootHandler([this]() { requestReboot(); });
+    // v2.7: server config getter/setter
+    ws->setServerConfigGetter([this]() { return readServerConfigJson(); });
+    ws->setServerConfigSetter([this](const String& body, String& err) {
+        return writeServerConfigJson(body, err);
+    });
 }
 
 String ConfigApi::readDeviceConfigJson() const {
@@ -68,6 +74,39 @@ bool ConfigApi::writeDeviceConfigJson(const String& body, String& errOut) {
     }
     SPIFFS.remove(DEVICE_CONFIG_PATH);
     if (!SPIFFS.rename("/deviceconfig.json.tmp", DEVICE_CONFIG_PATH)) {
+        errOut = "rename_failed";
+        return false;
+    }
+    return true;
+}
+
+// v2.7: server config (device config 와 동일 패턴)
+String ConfigApi::readServerConfigJson() const {
+    File f = SPIFFS.open(SERVER_CONFIG_PATH, "r");
+    if (!f) return "{}";
+    String s; s.reserve(f.size() + 16);
+    while (f.available()) s += (char)f.read();
+    f.close();
+    return s;
+}
+
+bool ConfigApi::writeServerConfigJson(const String& body, String& errOut) {
+    StaticJsonDocument<2048> doc;
+    DeserializationError de = deserializeJson(doc, body);
+    if (de) { errOut = String("invalid_json: ") + de.f_str(); return false; }
+    if (body.length() > 4096) { errOut = "too_large"; return false; }
+    File f = SPIFFS.open("/serverconfig.json.tmp", FILE_WRITE);
+    if (!f) { errOut = "open_tmp_failed"; return false; }
+    size_t w = f.print(body);
+    f.flush();
+    f.close();
+    if (w != body.length()) {
+        SPIFFS.remove("/serverconfig.json.tmp");
+        errOut = "short_write";
+        return false;
+    }
+    SPIFFS.remove(SERVER_CONFIG_PATH);
+    if (!SPIFFS.rename("/serverconfig.json.tmp", SERVER_CONFIG_PATH)) {
         errOut = "rename_failed";
         return false;
     }

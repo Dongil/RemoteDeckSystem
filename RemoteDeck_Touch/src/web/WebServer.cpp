@@ -166,6 +166,8 @@ void WebServer::registerHandlers() {
     reg("/api/imagesconfig", HTTP_GET,    &WebServer::trampolineImagesConfig);
     reg("/api/config",       HTTP_GET,    &WebServer::trampolineConfigGet);
     reg("/api/config",       HTTP_POST,   &WebServer::trampolineConfigPost);
+    reg("/api/serverconfig", HTTP_GET,    &WebServer::trampolineServerConfigGet);   // v2.7
+    reg("/api/serverconfig", HTTP_POST,   &WebServer::trampolineServerConfigPost);  // v2.7
     reg("/api/log",          HTTP_GET,    &WebServer::trampolineLog);
     reg("/api/reboot",       HTTP_POST,   &WebServer::trampolineReboot);
     reg("/api/ota",          HTTP_POST,   &WebServer::trampolineOtaUpload);
@@ -190,6 +192,8 @@ TRAMP(trampolineImagesDel,    handleImagesDel)
 TRAMP(trampolineImagesConfig, handleImagesConfig)
 TRAMP(trampolineConfigGet,    handleConfigGet)
 TRAMP(trampolineConfigPost,   handleConfigPost)
+TRAMP(trampolineServerConfigGet,  handleServerConfigGet)
+TRAMP(trampolineServerConfigPost, handleServerConfigPost)
 TRAMP(trampolineLog,          handleLog)
 TRAMP(trampolineReboot,       handleReboot)
 TRAMP(trampolineOtaUpload,    handleOtaUpload)
@@ -263,6 +267,46 @@ esp_err_t WebServer::handleConfigGet(httpd_req_t* req) {
     if (!requireAuth(req)) return ESP_OK;
     if (_getDeviceConfig) sendJsonString(req, 200, _getDeviceConfig());
     else                  sendJson(req, 500, "{\"ok\":false}");
+    return ESP_OK;
+}
+// v2.7: /api/serverconfig
+esp_err_t WebServer::handleServerConfigGet(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (_getServerConfig) sendJsonString(req, 200, _getServerConfig());
+    else                  sendJson(req, 500, "{\"ok\":false}");
+    return ESP_OK;
+}
+esp_err_t WebServer::handleServerConfigPost(httpd_req_t* req) {
+    if (!requireAuth(req)) return ESP_OK;
+    if (!_setServerConfig) { sendJson(req, 500, "{\"ok\":false,\"error\":\"no_handler\"}"); return ESP_OK; }
+    if (req->content_len == 0 || req->content_len > 4096) {
+        sendJson(req, 413, "{\"ok\":false,\"error\":\"too_large\"}");
+        return ESP_OK;
+    }
+    String body; body.reserve(req->content_len + 4);
+    char buf[513];
+    size_t remain = req->content_len;
+    while (remain > 0) {
+        int r = httpd_req_recv(req, buf, remain > 512 ? 512 : remain);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            sendJson(req, 500, "{\"ok\":false,\"error\":\"recv_failed\"}");
+            return ESP_OK;
+        }
+        buf[r] = 0;
+        body += buf;
+        remain -= r;
+    }
+    String err;
+    if (_setServerConfig(body, err)) {
+        logEvent("SVRCFG_SAVE", "ok");
+        sendJson(req, 200, "{\"ok\":true}");
+    } else {
+        char e[160];
+        snprintf(e, sizeof(e), "{\"ok\":false,\"error\":\"%s\"}", err.c_str());
+        logEvent("SVRCFG_SAVE", err.c_str());
+        sendJson(req, 400, e);
+    }
     return ESP_OK;
 }
 esp_err_t WebServer::handleLog(httpd_req_t* req) {

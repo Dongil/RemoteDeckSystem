@@ -219,7 +219,8 @@ void setup()
 
     images_update();    //다운로드 이미지 불러와서 표시
 
-    screen_saver_init(serverConfig.sleepTime);  //스크린세이브 설정
+    // v2.7: 스크린세이버 소스를 deviceConfig 로 통일 (웹 Device Config 편집 반영). LCD 저장은 둘 다 세팅해 정합.
+    screen_saver_init(deviceConfig.sleepTime);  //스크린세이브 설정
 
     screen_main = true; //메인 화면으로 왔는지
 

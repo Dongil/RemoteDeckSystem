@@ -69,10 +69,67 @@
       <button class="sub-tab" data-sub="image">이미지 관리</button>
     </nav>
     <div class="sub-panel active" id="sub-device">
-      <div class="card"><h2>Device Config</h2><p class="hint">준비 중 — S2(module-settings)에서 항목별 폼 구현.</p></div>
+      <div class="card">
+        <div class="cfg-sec">장치 정보</div>
+        <div class="cfg-group"><label>장치 ID</label><input type="text" id="dcDeviceId"></div>
+        <div class="cfg-group"><label>서버 URL</label><input type="text" id="dcServerUrl"></div>
+
+        <div class="cfg-sec">네트워크 모드</div>
+        <div class="radio-group">
+          <label><input type="radio" name="dcNetMode" id="dcNetEth" value="eth"> Ethernet</label>
+          <label><input type="radio" name="dcNetMode" id="dcNetWifi" value="wifi"> WiFi</label>
+        </div>
+
+        <div class="cfg-sec">이더넷 설정</div>
+        <label class="chk"><input type="checkbox" id="dcDhcp"> DHCP 사용</label>
+        <div class="cfg-group"><label>IP 주소</label><input type="text" id="dcIp"></div>
+        <div class="cfg-group"><label>게이트웨이</label><input type="text" id="dcGw"></div>
+        <div class="cfg-group"><label>서브넷 마스크</label><input type="text" id="dcSubnet"></div>
+        <div class="cfg-group"><label>DNS 1</label><input type="text" id="dcDns1"></div>
+        <div class="cfg-group"><label>DNS 2</label><input type="text" id="dcDns2"></div>
+        <div class="cfg-group"><label>MAC 주소</label><input type="text" id="dcMac"></div>
+
+        <div class="cfg-sec">WiFi 설정</div>
+        <div class="cfg-group"><label>SSID</label><input type="text" id="dcWifiSsid"></div>
+        <div class="cfg-group"><label>비밀번호</label><input type="password" id="dcWifiPw"></div>
+
+        <div class="cfg-sec">화면</div>
+        <div class="cfg-group"><label>스크린세이버 대기 (무활동)</label>
+          <select id="dcSleep"><option value="0">사용 안함</option><option value="1">1분</option><option value="2">2분</option><option value="3">3분</option><option value="4">4분</option><option value="5">5분</option><option value="10">10분</option><option value="20">20분</option><option value="30">30분</option><option value="60">60분</option></select>
+        </div>
+        <label class="chk"><input type="checkbox" id="dcNightEn"> 야간 화면 끄기 사용 <span class="hint" style="font-weight:normal">(스크린세이버와 별개 · 시간대 기반)</span></label>
+        <div class="time-row">
+          <div class="cfg-group"><label>시작</label><input type="time" id="dcNightStart"></div>
+          <div class="cfg-group"><label>종료</label><input type="time" id="dcNightEnd"></div>
+        </div>
+      </div>
+      <div class="card save-card">
+        <div class="btn-row"><button id="dcSave" class="primary">이 탭 전체 저장</button></div>
+        <div id="dcMsg" class="hint">Device Config 탭의 모든 항목을 저장합니다. 재부팅 시 반영.</div>
+      </div>
     </div>
     <div class="sub-panel" id="sub-server">
-      <div class="card"><h2>Server Config</h2><p class="hint">준비 중 — S2(module-settings)에서 항목별 폼 + /api/serverconfig 구현.</p></div>
+      <div class="card">
+        <div class="cfg-sec">MQTT</div>
+        <div class="cfg-group"><label>브로커 URL</label><input type="text" id="scMqttUrl"></div>
+        <div class="cfg-group"><label>사용자</label><input type="text" id="scMqttUser"></div>
+        <div class="cfg-group"><label>비밀번호</label><input type="password" id="scMqttPw"></div>
+        <div class="cfg-group"><label>포트</label><input type="number" id="scMqttPort"></div>
+        <div class="cfg-group"><label>Keepalive</label><input type="number" id="scMqttKeep"></div>
+        <div class="cfg-group"><label>Pub Topic</label><input type="text" id="scMqttPub"></div>
+        <div class="cfg-group"><label>Sub Topic</label><input type="text" id="scMqttSub"></div>
+        <div class="cfg-group"><label>Ping Topic</label><input type="text" id="scMqttPing"></div>
+
+        <div class="cfg-sec">연동 URL</div>
+        <div class="cfg-group"><label>Config URL</label><input type="text" id="scConfigUrl"></div>
+        <div class="cfg-group"><label>Image URL</label><input type="text" id="scImageUrl"></div>
+        <div class="cfg-group"><label>Status URL</label><input type="text" id="scStatusUrl"></div>
+        <label class="chk"><input type="checkbox" id="scHttpReq"> HTTP Request 사용</label>
+      </div>
+      <div class="card save-card">
+        <div class="btn-row"><button id="scSave" class="primary">이 탭 전체 저장</button></div>
+        <div id="scMsg" class="hint">Server Config 탭의 모든 항목을 저장합니다. 재부팅 시 반영.</div>
+      </div>
     </div>
     <div class="sub-panel" id="sub-image">
       <div class="card"><h2>이미지 관리</h2><p class="hint">준비 중 — S5(module-image-embed)에서 이미지 표시/교체 이관.</p></div>

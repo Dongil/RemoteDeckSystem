@@ -21,6 +21,10 @@ public:
     // /api/imagesconfig GET — /imagesconfig.json raw 반환
     String readImagesConfigJson() const;
 
+    // v2.7: /api/serverconfig GET/POST — /serverconfig.json raw (device config 와 동일 패턴)
+    String readServerConfigJson() const;
+    bool   writeServerConfigJson(const String& body, String& errOut);
+
     // /api/reboot — 메인 루프에서 ESP.restart() 처리 위한 flag
     void   requestReboot()       { _rebootRequested = true; }
     bool   pendingReboot() const { return _rebootRequested; }

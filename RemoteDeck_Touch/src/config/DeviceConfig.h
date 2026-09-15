@@ -24,6 +24,15 @@ struct NetworkConfig {
     std::string staticMAC;
 };
 
+// v2.7: 야간 화면 끄기 (시간대 기반, 스크린세이버와 별개)
+struct NightOffConfig {
+    bool enabled = false;
+    int startHour = 22;
+    int startMinute = 0;
+    int endHour = 6;
+    int endMinute = 0;
+};
+
 class DeviceConfig {
 public:
     std::string deviceID;
@@ -33,4 +42,5 @@ public:
     int sleepTime;
     VersionInfo versionInfo;
     bool webConfigMode = false;   // v2.6: 다음 부팅을 웹 설정 모드로 (부팅 시 소비, Design §3.1)
+    NightOffConfig nightOff;      // v2.7: 야간 화면 끄기 (Design §3.2b)
 };

@@ -27,6 +27,14 @@ bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output
     doc["sleep_time"] = config.sleepTime;
     doc["web_config_mode"] = config.webConfigMode;   // v2.6
 
+    // v2.7: 야간 화면 끄기
+    JsonObject night = doc.createNestedObject("night_off");
+    night["enabled"]      = config.nightOff.enabled;
+    night["start_hour"]   = config.nightOff.startHour;
+    night["start_minute"] = config.nightOff.startMinute;
+    night["end_hour"]     = config.nightOff.endHour;
+    night["end_minute"]   = config.nightOff.endMinute;
+
     // VersionInfo 구조체를 저장합니다.
     JsonObject version = doc.createNestedObject("version_info");
     version["firmware_date"] = config.versionInfo.firmwareDate.c_str();
@@ -73,6 +81,13 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
     config.rebootTime = doc["reboot_time"];
     config.sleepTime = doc["sleep_time"];
     config.webConfigMode = doc["web_config_mode"] | false;   // v2.6: 필드 부재 시 false (하위호환)
+
+    // v2.7: 야간 화면 끄기 (필드 부재 시 default — 하위호환)
+    config.nightOff.enabled     = doc["night_off"]["enabled"] | false;
+    config.nightOff.startHour   = doc["night_off"]["start_hour"] | 22;
+    config.nightOff.startMinute = doc["night_off"]["start_minute"] | 0;
+    config.nightOff.endHour     = doc["night_off"]["end_hour"] | 6;
+    config.nightOff.endMinute   = doc["night_off"]["end_minute"] | 0;
 
     // VersionInfo 구조체를 로드합니다.
     JsonObject version = doc["version_info"];

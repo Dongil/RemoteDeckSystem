@@ -15,12 +15,102 @@ function activateTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'status') renderStatusTab();
   if (name === 'logs') refreshLog();
+  if (name === 'settings') {   // 설정 진입 시 현재 활성 sub-tab 로드 (첫 진입 시 device 채움)
+    const act = document.querySelector('.sub-tab.active');
+    activateSubTab(act ? act.dataset.sub : 'device');
+  }
 }
 
 function activateSubTab(name) {
   document.querySelectorAll('.sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === name));
   document.querySelectorAll('.sub-panel').forEach(p => p.classList.toggle('active', p.id === 'sub-' + name));
-  // S2/S5에서 서브탭별 로더 연결 예정
+  if (name === 'device' && !_devLoaded) loadDeviceConfig();
+  if (name === 'server' && !_srvLoaded) loadServerConfig();
+  // 이미지 관리(sub-image)는 S5에서 연결
+}
+
+// ---------- 설정 (Device / Server Config) ----------
+// 전체 config 객체를 로드해 두고, 저장 시 렌더된 필드만 병합 → 통짜 POST.
+// (미렌더 필드 version_info/web_config_mode 등 보존 → 하위호환)
+let _devCfg = null, _devLoaded = false;
+let _srvCfg = null, _srvLoaded = false;
+const val = id => $(id).value;
+const setVal = (id, v) => { const e = $(id); if (e) e.value = (v == null ? '' : v); };
+const hm = (h, m) => String(h == null ? 0 : h).padStart(2, '0') + ':' + String(m == null ? 0 : m).padStart(2, '0');
+const parseHm = s => { const p = (s || '0:0').split(':'); return [parseInt(p[0]) || 0, parseInt(p[1]) || 0]; };
+
+async function postConfig(url, obj, label) {
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) });
+    if (!r.ok) { const t = await r.text(); throw new Error(t || ('HTTP ' + r.status)); }
+    toast(label + ' 설정 저장됨 (재부팅 후 반영)');
+  } catch (e) { toast(label + ' 저장 실패: ' + e.message, true); }
+}
+
+async function loadDeviceConfig() {
+  try {
+    const r = await fetch('/api/config');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _devCfg = await r.json();
+    const c = _devCfg, n = c.network_config || {};
+    setVal('dcDeviceId', c.device_id); setVal('dcServerUrl', c.server_url);
+    $('dcNetEth').checked = !!n.using_ethernet;
+    $('dcNetWifi').checked = !n.using_ethernet;
+    $('dcDhcp').checked = !n.using_static;
+    setVal('dcIp', n.static_ip); setVal('dcGw', n.static_gateway); setVal('dcSubnet', n.static_subnet);
+    setVal('dcDns1', n.static_primaryDNS); setVal('dcDns2', n.static_secondaryDNS); setVal('dcMac', n.static_mac);
+    setVal('dcWifiSsid', n.wifi_ssid); setVal('dcWifiPw', n.wifi_passwd);
+    setVal('dcSleep', String(c.sleep_time == null ? 0 : c.sleep_time));
+    const no = c.night_off || {};
+    $('dcNightEn').checked = !!no.enabled;
+    setVal('dcNightStart', hm(no.start_hour == null ? 22 : no.start_hour, no.start_minute));
+    setVal('dcNightEnd', hm(no.end_hour == null ? 6 : no.end_hour, no.end_minute));
+    _devLoaded = true;
+  } catch (e) { toast('Device config 로드 실패: ' + e.message, true); }
+}
+
+async function saveDeviceConfig() {
+  const c = _devCfg || {};
+  c.device_id = val('dcDeviceId');
+  c.server_url = val('dcServerUrl');
+  const n = c.network_config = c.network_config || {};
+  n.using_ethernet = $('dcNetEth').checked;
+  n.using_static = !$('dcDhcp').checked;
+  n.static_ip = val('dcIp'); n.static_gateway = val('dcGw'); n.static_subnet = val('dcSubnet');
+  n.static_primaryDNS = val('dcDns1'); n.static_secondaryDNS = val('dcDns2'); n.static_mac = val('dcMac');
+  n.wifi_ssid = val('dcWifiSsid'); n.wifi_passwd = val('dcWifiPw');
+  c.sleep_time = parseInt(val('dcSleep')) || 0;
+  const no = c.night_off = c.night_off || {};
+  const s = parseHm(val('dcNightStart')), e = parseHm(val('dcNightEnd'));
+  no.enabled = $('dcNightEn').checked;
+  no.start_hour = s[0]; no.start_minute = s[1];
+  no.end_hour = e[0]; no.end_minute = e[1];
+  await postConfig('/api/config', c, 'Device');
+}
+
+async function loadServerConfig() {
+  try {
+    const r = await fetch('/api/serverconfig');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _srvCfg = await r.json();
+    const c = _srvCfg;
+    setVal('scMqttUrl', c.mqtt_url); setVal('scMqttUser', c.mqtt_user); setVal('scMqttPw', c.mqtt_passwd);
+    setVal('scMqttPort', c.mqtt_port); setVal('scMqttKeep', c.mqtt_keepalive);
+    setVal('scMqttPub', c.mqtt_pub); setVal('scMqttSub', c.mqtt_sub); setVal('scMqttPing', c.mqtt_ping);
+    setVal('scConfigUrl', c.config_url); setVal('scImageUrl', c.image_url); setVal('scStatusUrl', c.status_url);
+    $('scHttpReq').checked = !!c.using_httprequest;
+    _srvLoaded = true;
+  } catch (e) { toast('Server config 로드 실패: ' + e.message, true); }
+}
+
+async function saveServerConfig() {
+  const c = _srvCfg || {};
+  c.mqtt_url = val('scMqttUrl'); c.mqtt_user = val('scMqttUser'); c.mqtt_passwd = val('scMqttPw');
+  c.mqtt_port = parseInt(val('scMqttPort')) || 0; c.mqtt_keepalive = parseInt(val('scMqttKeep')) || 0;
+  c.mqtt_pub = val('scMqttPub'); c.mqtt_sub = val('scMqttSub'); c.mqtt_ping = val('scMqttPing');
+  c.config_url = val('scConfigUrl'); c.image_url = val('scImageUrl'); c.status_url = val('scStatusUrl');
+  c.using_httprequest = $('scHttpReq').checked;
+  await postConfig('/api/serverconfig', c, 'Server');
 }
 
 // ---------- Status (header + 상태 탭) ----------
@@ -174,6 +264,8 @@ async function init() {
   $('btnIn').addEventListener('click', () => toggleControl('in'));
   $('btnOut').addEventListener('click', () => toggleControl('out'));
   $('btnReboot').addEventListener('click', rebootDevice);
+  $('dcSave').addEventListener('click', saveDeviceConfig);
+  $('scSave').addEventListener('click', saveServerConfig);
   $('logRefresh').addEventListener('click', refreshLog);
   $('logAuto').addEventListener('change', toggleLogAuto);
 
