@@ -132,7 +132,13 @@
       </div>
     </div>
     <div class="sub-panel" id="sub-image">
-      <div class="card"><h2>이미지 관리</h2><p class="hint">준비 중 — S5(module-image-embed)에서 이미지 표시/교체 이관.</p></div>
+      <div class="card">
+        <h2>이미지 관리</h2>
+        <p class="hint">각 이미지의 <b>[교체]</b>를 누르면 파일 선택창이 열리고, 선택 즉시 업로드됩니다. (PNG/BMP, 최대 200KB)</p>
+        <div class="card-row" id="imageCards"><div class="hint">loading...</div></div>
+        <div class="progress-bar" id="progressBar" hidden><div class="progress-fill" id="progressFill">0%</div></div>
+        <input type="file" id="fileInput" accept=".png,.bmp" hidden>
+      </div>
     </div>
   </section>
 

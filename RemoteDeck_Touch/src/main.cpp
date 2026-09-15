@@ -58,7 +58,7 @@ const char* IMAGES_DOWNLOAD_PATH = "/download/imagesconfig.json";  // ImagesConf
 
 time_t currentTime = 0; // 서버에서 받은 시간을 저장
 unsigned long lastSyncMillis = 0;   // 마지막 동기화 이후의 millis() 값을 저장하여 경과 시간을 계산
-int rebootTime = 0; // 재부팅 시간
+extern bool g_deviceConfigMigrated;  // v2.7: JsonUtils — reboot_time → rebootSchedule 이관 신호
 
 bool room = false;
 bool g_webMode = false;      // v2.6: 이번 부팅이 웹 설정 모드인지 (Design §2.1)
@@ -130,6 +130,13 @@ void setup()
     ConfigManager::loadServerConfig(serverConfig);
     ConfigManager::loadImagesConfig(imagesConfig);
     delay(100);
+
+    // v2.7: 레거시 reboot_time → rebootSchedule 이관이 발생했으면 1회 파일에 persist.
+    //   (웹 관리 탭 /api/schedule 이 deviceconfig.json 을 직접 읽으므로 파일 반영 필요)
+    if (g_deviceConfigMigrated) {
+        ConfigManager::saveDeviceConfig(deviceConfig);
+        Serial.println("[v2.7] reboot_time → rebootSchedule 마이그레이션 저장 완료");
+    }
 
     // 저장된 설정에서 ip, port를 파싱
     if (TypeUtils::parseAddress(deviceConfig.serverURL.c_str(), httpUrl, httpPort)) {
@@ -270,6 +277,18 @@ void loop()
 
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
+    // v2.7: NTP currentTime 소프트 클록 — MQTT tick 사이 millis() 로 초 단위 보간.
+    //   재부팅 스케줄/야간 화면 끄기가 tick 사이에도 정확한 시각을 쓰도록 매 루프 진행.
+    //   (기존엔 레거시 reboot_time>0 블록이 이 역할을 겸했으나, 통합하며 무조건화)
+    if (currentTime > 0) {
+        unsigned long nowMs   = millis();
+        unsigned long elapsed = (nowMs - lastSyncMillis) / 1000;
+        if (elapsed > 0) {
+            currentTime    += elapsed;
+            lastSyncMillis += elapsed * 1000;
+        }
+    }
+
     // v2.7 S4a: 재부팅 스케줄 (NTP currentTime=UTC+9, LCD 모드에서만). 분당 1회 중복 방지.
     if (deviceConfig.rebootSchedule.enabled && currentTime > 0) {
         struct tm* t = gmtime(&currentTime);
@@ -336,29 +355,8 @@ void loop()
         }   
         
         main_t = millis();
-
-        if(rebootTime > 0)
-        {
-            unsigned long elapsedSeconds = (main_t - lastSyncMillis) / 1000;
-            currentTime += elapsedSeconds;  // 마지막 동기화 이후의 경과 초 더함
-            lastSyncMillis += elapsedSeconds * 1000;  // 최종 동기화 시각 저장
-
-            struct tm* timeInfo = gmtime(&currentTime);
-            
-            // char timeString[30];
-            // strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeInfo);
-
-            // Serial.print("현재 시간 : ");
-            // Serial.println(timeString);
-
-            // 재부팅 조건 체크
-            // 1. 기기가 06시 이전에 켜져 있다가 06:00:00 ~ 06:00:04 사이에 재부팅
-            if (timeInfo->tm_hour == rebootTime && timeInfo->tm_min == 00 && timeInfo->tm_sec > 0 && timeInfo->tm_sec < 4) {
-                Serial.println("재부팅합니다.");
-                delay(3000);
-                ESP.restart();
-            }           
-        }
+        // v2.7: 레거시 reboot_time 일일 재부팅 로직 제거 — 재부팅은 rebootSchedule 로 일원화(위).
+        //   currentTime 소프트 클록도 위에서 무조건 진행하므로 여기선 시간 처리 없음.
     }
 
     /*
@@ -521,7 +519,7 @@ void message_process(String msg) {
     // JSON 데이터에서 필드 값 추출
     const char* status = doc["status"];
     const char* data = doc["data"];
-    uint64_t tick = doc["tick"];
+    uint64_t tick = doc["tick"] | 0ULL;   // v2.7: 필드 부재 시 0 (아래 유효성 가드)
 
     // 필드 값 출력 확인
     Serial.print("status: ");
@@ -548,24 +546,22 @@ void message_process(String msg) {
         controlApi.notifyState(false, true);
     }
 
-    // tick 값 추출 (서버의 Unix 타임스탬프, UTC 기준)
-    // UTC+9 (서울)로 변환하기 위해 9시간을 더함
-    tick += 9UL * 3600;
+    // tick = 서버 Unix 타임스탬프(UTC). v2.7 유효성 가드:
+    //   tick 필드가 없거나 이상치(0/과거)면 시계를 갱신하지 않음 —
+    //   기존엔 누락 시 0 → +9h = 1970-01-01 09:00 으로 시계가 오염되어
+    //   재부팅 스케줄/야간 화면 끄기가 오작동할 수 있었음. 마지막 정상 시각 + 소프트클록 유지.
+    if (tick > 1600000000ULL) {          // 2020-09-13 이후만 유효
+        currentTime = (time_t)(tick + 9UL * 3600);  // UTC+9 (서울)
+        lastSyncMillis = millis();
 
-    // 변환된 tick 값을 time_t로 변환 후, gmtime()으로 구조체 생성
-    currentTime = tick;
-    lastSyncMillis = millis();
-
-    rebootTime = deviceConfig.rebootTime;
-    // Serial.print("재부팅 시각: ");
-    // Serial.println(rebootTime);
-
-    struct tm *timeInfo = gmtime(&currentTime);
-    char timeString[30];
-    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeInfo);
-
-    Serial.print("시간 동기화: ");
-    Serial.println(timeString);
+        struct tm *timeInfo = gmtime(&currentTime);
+        char timeString[30];
+        strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", timeInfo);
+        Serial.print("시간 동기화: ");
+        Serial.println(timeString);
+    } else if (tick != 0) {
+        Serial.printf("tick 이상치 무시: %llu (시계 미갱신)\n", (unsigned long long)tick);
+    }
 }
 
 void gotoDeviceManager()

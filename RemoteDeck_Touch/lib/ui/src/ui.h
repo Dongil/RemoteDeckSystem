@@ -70,11 +70,8 @@ extern lv_obj_t * ui_Label15;
 void ui_event_txtaServerurl(lv_event_t * e);
 extern lv_obj_t * ui_txtaServerurl;
 extern lv_obj_t * ui_Label24;
-extern lv_obj_t * ui_Label25;
 extern lv_obj_t * ui_dropSleep;
 extern lv_obj_t * ui_Label26;
-extern lv_obj_t * ui_dropReboot;
-extern lv_obj_t * ui_Label27;
 // SCREEN: ui_ScreenEthernet
 void ui_ScreenEthernet_screen_init(void);
 extern lv_obj_t * ui_ScreenEthernet;

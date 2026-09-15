@@ -1,5 +1,9 @@
 #include "JsonUtils.h"
 
+// v2.7: 직전 deserializeDeviceConfig 호출에서 레거시 reboot_time → rebootSchedule 이관이
+//   발생했는지 여부. setup()/다운로드 config 로드 후 1회 파일 persist 신호로 사용.
+bool g_deviceConfigMigrated = false;
+
 // DeviceConfig 직렬화
 bool JsonUtils::serializeDeviceConfig(const DeviceConfig& config, String& output) {
     // JSON 문서를 저장할 StaticJsonDocument를 선언합니다. (v2.7: night_off/reboot_schedule 여유)
@@ -68,6 +72,8 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
         return false;
     }
 
+    g_deviceConfigMigrated = false;   // v2.7: 이번 로드의 마이그레이션 신호 초기화
+
     // JSON 데이터를 DeviceConfig 구조체로 변환합니다.
     config.deviceID = doc["device_id"].as<std::string>();
 
@@ -106,6 +112,20 @@ bool JsonUtils::deserializeDeviceConfig(DeviceConfig& config, const String& json
     }
     config.rebootSchedule.hour   = doc["reboot_schedule"]["hour"] | 4;
     config.rebootSchedule.minute = doc["reboot_schedule"]["minute"] | 0;
+
+    // v2.7 마이그레이션: pre-v2.7 config 는 reboot_schedule 키가 없음.
+    //   레거시 reboot_time(기본 7 = 매일 07:00 재부팅)을 rebootSchedule 로 이관 →
+    //   재부팅을 웹 스케줄로 일원화(레거시 로직 제거)해도 기존 필드 기기의 자동 재부팅 유지.
+    //   * reboot_schedule 키가 이미 있으면(v2.7+) 사용자가 껐을 수 있어 절대 덮어쓰지 않음.
+    if (!doc.containsKey("reboot_schedule") && config.rebootTime > 0) {
+        config.rebootSchedule.enabled = true;
+        for (int i = 0; i < 7; i++) config.rebootSchedule.days[i] = true;
+        config.rebootSchedule.hour   = config.rebootTime;
+        config.rebootSchedule.minute = 0;
+        g_deviceConfigMigrated = true;
+        Serial.printf("[v2.7] reboot_time=%d → rebootSchedule 매일 %02d:00 이관\n",
+                      config.rebootTime, config.rebootTime);
+    }
 
     // VersionInfo 구조체를 로드합니다.
     JsonObject version = doc["version_info"];

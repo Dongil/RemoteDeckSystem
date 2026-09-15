@@ -406,11 +406,16 @@ esp_err_t WebServer::handleReboot(httpd_req_t* req) {
 
 // --- Images GET/DELETE by name (wildcard route extracts name from URI) ---
 static String parseImageNameFromUri(const char* uri) {
-    // /api/images/<name>
+    // /api/images/<name>[?query]
     const char* prefix = "/api/images/";
     size_t pl = strlen(prefix);
     if (strncmp(uri, prefix, pl) != 0) return String();
-    return String(uri + pl);
+    String name(uri + pl);
+    // v2.7 fix: 캐시버스터(?t=...) 쿼리스트링 제거 — 없으면 sanitizeImageName 의
+    //   확장자 검사(.png/.bmp)가 "title.bmp?t=123" 에서 실패 → 400 → 썸네일 깨짐.
+    int q = name.indexOf('?');
+    if (q >= 0) name = name.substring(0, q);
+    return name;
 }
 
 esp_err_t WebServer::handleImagesGet(httpd_req_t* req) {

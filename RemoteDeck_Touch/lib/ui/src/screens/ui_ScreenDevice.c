@@ -175,13 +175,6 @@ void ui_ScreenDevice_screen_init(void)
     lv_obj_set_y(ui_Label24, 80);
     lv_label_set_text(ui_Label24, "Sleep In :");
 
-    ui_Label25 = lv_label_create(ui_Panel2);
-    lv_obj_set_width(ui_Label25, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_Label25, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Label25, -5);
-    lv_obj_set_y(ui_Label25, 120);
-    lv_label_set_text(ui_Label25, "Reboot Time:");
-
     ui_dropSleep = lv_dropdown_create(ui_Panel2);
     lv_dropdown_set_options(ui_dropSleep, "No\n1\n2\n3\n4\n5\n10\n20\n30\n60");
     lv_obj_set_width(ui_dropSleep, 80);
@@ -198,23 +191,6 @@ void ui_ScreenDevice_screen_init(void)
     lv_obj_set_x(ui_Label26, 170);
     lv_obj_set_y(ui_Label26, 80);
     lv_label_set_text(ui_Label26, "/Min");
-
-    ui_dropReboot = lv_dropdown_create(ui_Panel2);
-    lv_dropdown_set_options(ui_dropReboot, "No\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11");
-    lv_obj_set_width(ui_dropReboot, 80);
-    lv_obj_set_height(ui_dropReboot, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_dropReboot, 97);
-    lv_obj_set_y(ui_dropReboot, 110);
-    lv_obj_add_flag(ui_dropReboot, LV_OBJ_FLAG_SCROLL_ON_FOCUS);     /// Flags
-
-
-
-    ui_Label27 = lv_label_create(ui_Panel2);
-    lv_obj_set_width(ui_Label27, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(ui_Label27, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(ui_Label27, 181);
-    lv_obj_set_y(ui_Label27, 120);
-    lv_label_set_text(ui_Label27, "/HH");
 
     lv_obj_add_event_cb(ui_btnSaveID, ui_event_btnSaveID, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_btnLoadMqtt, ui_event_btnLoadMqtt, LV_EVENT_ALL, NULL);

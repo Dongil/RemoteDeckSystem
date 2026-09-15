@@ -27,7 +27,81 @@ function activateSubTab(name) {
   document.querySelectorAll('.sub-panel').forEach(p => p.classList.toggle('active', p.id === 'sub-' + name));
   if (name === 'device' && !_devLoaded) loadDeviceConfig();
   if (name === 'server' && !_srvLoaded) loadServerConfig();
-  // 이미지 관리(sub-image)는 S5에서 연결
+  if (name === 'image') { if (!_imgBound) { bindDragDrop(); _imgBound = true; } renderImageCards(); }
+}
+
+// ---------- 이미지 관리 (설정 > 이미지 관리) ----------
+const ROLES = ['title', 'photo', 'name'];
+let _imgBound = false;
+
+async function fetchImagesList() {
+  try {
+    const r = await fetch('/api/images/list');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (e) { toast('이미지 목록 로드 실패: ' + e.message, true); return { images: [] }; }
+}
+function matchImageForRole(images, role) {
+  return images.find(i => i.name.toLowerCase() === role + '.png')
+      || images.find(i => i.name.toLowerCase() === role + '.bmp');
+}
+async function renderImageCards() {
+  const data = await fetchImagesList();
+  const cards = ROLES.map(role => {
+    const img = matchImageForRole(data.images || [], role);
+    const src = img ? `/api/images/${img.name}?t=${Date.now()}` : '';
+    const thumb = img ? `<img data-src="${src}" alt="${role}">` : `<div class="placeholder">no image</div>`;
+    const meta = img ? `${img.name} · ${fmtBytes(img.size)}` : '— 기본 이미지 —';
+    const del = img ? `<button class="danger" data-del="${img.name}">삭제</button>` : '';
+    return `<div class="img-card"><div class="role">${role}</div><div class="thumb">${thumb}</div><div class="meta">${meta}</div><button data-role="${role}">교체</button>${del}</div>`;
+  }).join('');
+  $('imageCards').innerHTML = cards;
+  $('imageCards').querySelectorAll('button[data-role]').forEach(b => b.onclick = () => triggerFileSelect(b.dataset.role));
+  $('imageCards').querySelectorAll('button[data-del]').forEach(b => b.onclick = () => deleteImage(b.dataset.del));
+  // 썸네일 순차 로드 — 동시 로드 시 esp_http_server 소켓 한계(=4, control long-poll 점유)로 실패하는 것 방지
+  for (const im of $('imageCards').querySelectorAll('img[data-src]')) {
+    await new Promise(res => { im.onload = res; im.onerror = res; im.src = im.dataset.src; });
+  }
+}
+function triggerFileSelect(role) { const inp = $('fileInput'); inp.dataset.targetRole = role; inp.click(); }
+async function uploadFile(file) {
+  if (!file) return;
+  const name = file.name.toLowerCase();
+  if (!name.endsWith('.png') && !name.endsWith('.bmp')) { toast('PNG 또는 BMP만 가능', true); return; }
+  if (file.size > 200 * 1024) { toast(`파일이 너무 큼: ${fmtBytes(file.size)} (최대 200KB)`, true); return; }
+  const role = $('fileInput').dataset.targetRole;
+  const ext = name.endsWith('.png') ? '.png' : '.bmp';
+  const finalName = role ? (role + ext) : file.name;
+  const renamed = new File([file], finalName, { type: file.type });
+  const fd = new FormData(); fd.append('file', renamed);
+  const bar = $('progressBar'), fill = $('progressFill');
+  bar.hidden = false; fill.style.width = '0%'; fill.textContent = '0%';
+  try {
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/images/upload');
+      xhr.upload.onprogress = e => { if (e.lengthComputable) { const p = Math.round(e.loaded * 100 / e.total); fill.style.width = p + '%'; fill.textContent = p + '%'; } };
+      xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('HTTP ' + xhr.status));
+      xhr.onerror = () => reject(new Error('network'));
+      xhr.send(fd);
+    });
+    toast(`${finalName} 업로드 완료 — 단말 갱신 중`);
+    setTimeout(renderImageCards, 1500);
+  } catch (e) { toast(`업로드 실패: ${e.message}`, true); }
+  finally { setTimeout(() => { bar.hidden = true; }, 1500); $('fileInput').dataset.targetRole = ''; $('fileInput').value = ''; }
+}
+async function deleteImage(nm) {
+  if (!confirm(`${nm} 을(를) 삭제하시겠습니까?`)) return;
+  try {
+    const r = await fetch('/api/images/' + nm, { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast(`${nm} 삭제됨`);
+    setTimeout(renderImageCards, 800);
+  } catch (e) { toast(`삭제 실패: ${e.message}`, true); }
+}
+function bindDragDrop() {
+  // 드롭존 제거(교체 버튼이 단일 진입점) — 숨은 fileInput 의 change 만 연결
+  $('fileInput').addEventListener('change', e => { if (e.target.files[0]) uploadFile(e.target.files[0]); });
 }
 
 // ---------- 설정 (Device / Server Config) ----------
