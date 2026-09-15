@@ -158,7 +158,8 @@ void setup()
         // v2.6 S2: 정적 안내화면 1회 렌더 (TFT 만, LVGL 없음). 이후 tft 무접근 → 서비스 중 경합 없음.
         lcd_show_webmode_info(ip.toString().c_str());
         imageApi.setNetworkInfo("ethernet", ip.toString());
-        imageApi.setFirmwareInfo("2.6.0-webmode", "2026-09-11");
+        imageApi.setFirmwareInfo("2.7.0-webmode", "2026-09-14");
+        imageApi.setDeviceId(String(deviceConfig.deviceID.c_str()));   // v2.7 상태 탭
         imageApi.attach(&webServer);
         configApi.attach(&webServer);
         webLogger.attach(&webServer);
@@ -238,6 +239,14 @@ void loop()
         configApi.loop();   // /api/reboot(웹 "재부팅" 버튼) → ESP.restart() = LCD 모드 복귀(exit)
         otaApi.loop();
         if (ethernet_conn) mqttEthernet_loop();
+        // v2.7: 상태 탭 런타임 정보(MQTT/시각) 1초 주기 갱신
+        static uint32_t lastRt = 0;
+        if (millis() - lastRt > 1000) {
+            lastRt = millis();
+            char ts[9] = "-";
+            if (currentTime > 0) { struct tm* t = gmtime(&currentTime); strftime(ts, sizeof(ts), "%H:%M:%S", t); }
+            imageApi.setRuntimeInfo(mqttEthernet_connected(), ts);
+        }
         // v2.6 S2: 무활동 타임아웃 — 마지막 요청(없으면 진입 시각) 기준 10분 경과 시 LCD 복귀
         uint32_t ref = (g_webLastActivityMs != 0) ? g_webLastActivityMs : g_webModeStartMs;
         if ((uint32_t)(millis() - ref) > WEB_IDLE_TIMEOUT_MS) {
@@ -486,14 +495,15 @@ void message_process(String msg) {
     // status 에 따라서 추가 처리 로직 작성
     if (strcmp(status, "IN") == 0) {
         // 여기서 'IN' 상태일 때의 처리 로직 추가
-        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL);
+        // v2.7: 웹모드는 LVGL/ui 미init → LCD 미러 스킵(안 하면 uninit ui_ibtnRoom 접근 크래시→재부팅)
+        if (!g_webMode) lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_in_png, NULL);
         room = true;
         Serial.println("Room IN");
         // v2.3 module-control: web Long polling client 갱신
         controlApi.notifyState(true, false);
     } else if (strcmp(status, "OUT") == 0) {
         // 여기서 'OUT' 상태일 때의 처리 로직 추가
-        lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);
+        if (!g_webMode) lv_imgbtn_set_src(ui_ibtnRoom, LV_IMGBTN_STATE_RELEASED, NULL, &ui_img_out_png, NULL);
         room = false;
         Serial.println("Room OUT");
         controlApi.notifyState(false, true);

@@ -147,6 +147,11 @@ String ImageApi::buildStatusJson() const {
     doc["fw_version"] = _fwVersion;
     doc["fw_date"]    = _fwDate;
 
+    // v2.7: 상태 탭 PC 스타일 상세정보
+    doc["device_id"]      = _deviceId;
+    doc["mqtt_connected"] = _mqttConnected;
+    doc["time"]           = _timeStr;
+
     String out;
     serializeJson(doc, out);
     return out;

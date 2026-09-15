@@ -5,12 +5,12 @@ header{background:#16213e;padding:12px 20px;display:flex;justify-content:space-b
 header h1{font-size:18px;color:#0ff;font-weight:bold}
 header span{font-size:12px;color:#888;font-family:monospace}
 
-nav.tabs{background:#0f1830;padding:0 12px;display:flex;gap:2px;border-bottom:1px solid #2a3050}
-.tab{background:transparent;border:none;color:#888;padding:12px 18px;cursor:pointer;font-size:13px;border-bottom:2px solid transparent;transition:all .15s}
+nav.tabs{background:#0f1830;padding:0;display:flex;gap:0;border-bottom:1px solid #2a3050}
+.tab{flex:1;text-align:center;background:transparent;border:none;color:#888;padding:14px 8px;cursor:pointer;font-size:14px;border-bottom:2px solid transparent;transition:all .15s}
 .tab:hover{color:#0ff}
 .tab.active{color:#0ff;border-bottom-color:#0ff}
 
-main{padding:12px;max-width:900px;margin:0 auto}
+main{padding:12px 16px;max-width:none;margin:0}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 
@@ -78,3 +78,19 @@ main{padding:12px;max-width:900px;margin:0 auto}
 .ctrl-btn.ctrl-in:hover,.ctrl-btn.ctrl-in.active{background:#0a8;color:#000}
 .ctrl-btn.ctrl-out{border-color:#fa0;color:#fa0}
 .ctrl-btn.ctrl-out:hover,.ctrl-btn.ctrl-out.active{background:#a40;color:#fff}
+
+/* v2.7 상태 탭 — PC 스타일 시스템 정보 (label: value 리스트) */
+.info-list{display:flex;flex-direction:column;gap:8px}
+.info-row{display:flex;gap:8px;font-size:14px;line-height:1.5}
+.info-row .k{color:#8a93a6;min-width:96px}
+.info-row .v{color:#0ff;font-family:monospace;word-break:break-all}
+.info-row .v.on{color:#4ac86e}
+.info-row .v.off{color:#f04a4a}
+
+/* v2.7 설정 sub-tabs — RemoteDeck_PC 스타일(전체폭 flex:1 + active 배경) */
+nav.sub-tabs{display:flex;background:#0d1b3e;border-radius:8px 8px 0 0;overflow-x:auto;margin-bottom:12px}
+.sub-tab{flex:1;padding:10px 12px;background:none;border:none;color:#666;cursor:pointer;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;transition:all .2s}
+.sub-tab:hover{color:#aaa}
+.sub-tab.active{color:#0ff;border-bottom-color:#0ff;background:#16213e}
+.sub-panel{display:none}
+.sub-panel.active{display:block}

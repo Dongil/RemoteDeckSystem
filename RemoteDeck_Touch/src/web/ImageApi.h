@@ -36,6 +36,13 @@ public:
         _fwDate = date ? date : "2026-06-22";
     }
 
+    // v2.7: 상태 탭 PC 스타일 상세정보용 — 장치 ID(정적) + 런타임(MQTT/시각, loop 갱신)
+    void setDeviceId(const String& id) { _deviceId = id; }
+    void setRuntimeInfo(bool mqttConnected, const String& timeStr) {
+        _mqttConnected = mqttConnected;
+        _timeStr = timeStr;
+    }
+
 private:
     static constexpr size_t IMAGE_MAX_BYTES = 200 * 1024;
 
@@ -51,6 +58,9 @@ private:
     String _ip;
     const char* _fwVersion = "1.0.0-touch";
     const char* _fwDate = "2026-06-22";
+    String _deviceId;                 // v2.7
+    bool   _mqttConnected = false;    // v2.7
+    String _timeStr;                  // v2.7 (HH:MM:SS)
 
     // 콜백 핸들러
     void onUploadStart(const String& filename, size_t total);
