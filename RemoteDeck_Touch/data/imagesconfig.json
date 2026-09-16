@@ -26,35 +26,35 @@
             "url": "title.bmp",
             "x": 0,
             "y": 0,
-            "z": 0,
+            "z": 9,
             "state": "title"
         },
         {
             "url": "photo.bmp",
             "x": 0,
-            "y": 86,
-            "z": 0,
+            "y": 236,
+            "z": 9,
             "state": "photo"
         },
         {
             "url": "in.bmp",
-            "x": 100,
+            "x": 0,
             "y": 86,
-            "z": 0,
+            "z": 1,
             "state": "in"
         },
         {
             "url": "out.bmp",
-            "x": 100,
+            "x": 0,
             "y": 86,
-            "z": 0,
+            "z": 2,
             "state": "out"
         },
         {
             "url": "name.bmp",
             "x": 0,
-            "y": 236,
-            "z": 0,
+            "y": 0,
+            "z": 1,
             "state": "name"
         }
     ]

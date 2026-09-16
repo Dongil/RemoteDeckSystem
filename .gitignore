@@ -34,7 +34,8 @@ desktop.ini
 # bkit
 .bkit/
 
-# firmware build: distribute binaries via repo, ignore intermediates
-# RemoteDeck_PC/firmware/  ← 배포 binary는 추적 (전체 펌웨어 + OTA)
+# firmware build binaries: data/+code 로 재빌드 가능 → 버전관리 제외 (v2.8)
+#   Touch: firmware bin gitignore. (PC: 기존 배포본은 추적 유지)
+RemoteDeck_Touch/firmware/*.bin
 # v2.1: TFT_eSPI bundled lib backup (use bodmer/TFT_eSPI@^2.5 via lib_deps instead)
 RemoteDeck_Touch/lib/TFT_eSPI.v2.4.61.bak/
