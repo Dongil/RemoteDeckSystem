@@ -6,8 +6,9 @@ extern DeviceManager* deviceManager;   // 장치 연결 관리자
 // Wi-Fi 정보가 변경되었을 때 호출할 대리 함수 선언 (외부에서 정의해야 함)
 void wifiInfo_Changed();
 void ethernetInfo_Changed();
-void fetchServerInfo();
-void fetchImageFiles();
+// v2.8: 버튼 → 확인창(promptFetch*) → loop 에서 fetch → 결과창 (main.cpp)
+void promptFetchServerInfo();
+void promptFetchImageFiles();
 
 DeviceManager::DeviceManager(DeviceConfig& device, ServerConfig& server, ImagesConfig& images) 
     : deviceConfig(device), serverConfig(server), imagesConfig(images) {}
@@ -260,12 +261,12 @@ void btnSaveID_Click(lv_event_t * e)
 
 void btnLoadMqtt_Click(lv_event_t * e)
 {
-	fetchServerInfo();
+	promptFetchServerInfo();   // v2.8: 확인창 → loop 에서 서버설정 불러오기
 }
 
 void btnLoadImages_Click(lv_event_t * e)
 {
-	fetchImageFiles();
+	promptFetchImageFiles();   // v2.8: 확인창 → loop 에서 이미지 불러오기
 }
 
 void btnReboot_Click(lv_event_t * e)

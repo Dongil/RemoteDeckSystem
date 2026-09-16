@@ -46,6 +46,14 @@ bool TypeUtils::parseAddress(const char* address, String& ip, uint16_t& port) {
         addrStr = addrStr.substring(8);
     }
 
+    // v2.8 fix: 경로/트레일링 슬래시 제거 → host[:port] 만 남김.
+    //   (예: "http://192.168.10.230/" → "192.168.10.230")
+    //   이전엔 슬래시가 httpUrl 에 남아 "http://host/:port/path" 로 조립돼 다운로드 실패.
+    int slashIdx = addrStr.indexOf('/');
+    if (slashIdx != -1) {
+        addrStr = addrStr.substring(0, slashIdx);
+    }
+
     // 포트가 포함되어 있는지 확인
     int colonIndex = addrStr.indexOf(':');
     if (colonIndex != -1) {
