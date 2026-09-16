@@ -5,8 +5,12 @@
 | [RemoteDeck_PC_v2.6.2-IC](RemoteDeck_PC_v2.6.2-IC/) | Completed (IC 재부재 컬럼) | IntegrateController (client) | 100% | 2026-09-11 |
 | [RemoteDeck_Touch_v2.6](RemoteDeck_Touch_v2.6/) | Completed (WebUI 부팅경계 부활) | RemoteDeck_Touch (firmware) | 100% | 2026-09-14 |
 | [RemoteDeck_Touch_v2.7](RemoteDeck_Touch_v2.7/) | Completed (WebUI PC스타일 리뉴얼) | RemoteDeck_Touch (firmware) | 97% | 2026-09-15 |
+| [RemoteDeck_Touch_v2.8](RemoteDeck_Touch_v2.8/) | Completed (서버 설정/이미지 불러오기 정리) | RemoteDeck_Touch (firmware) | 98% | 2026-09-16 |
 
 ## Summaries
+
+### RemoteDeck_Touch_v2.8
+LCD 장치설정 "서버설정/이미지 불러오기" 버튼(프로젝트 이전부터 존재) 코드 점검 정리. **설계의도**: 공통 정보(serverconfig·id별 이미지)는 서버 일괄 수신, 개별 기기정보(deviceconfig=IP/deviceID/네트워크)는 LCD·웹 전용. 주요 수정: (1) fetchServerInfo 를 serverconfig 전용으로 — **deviceconfig 서버 다운로드 제거**(기존엔 덮어써 개별 IP 유실 위험), (2) fetchImageFiles 역할 고정(title/photo/name), (3) **이미지 단일 경로 `/images/` 통합** — 웹 교체·서버 다운로드 공통 저장으로 SPIFFS 중복 제거 + 서버본이 기본이미지에 가려 반영 안 되던 문제 해소(구 `/download/` 별도경로 폐기), in/out(공통·불변)은 펌웨어 임베드 유지, (4) downloadFile/sendHttpMessage **httpPort URL 반영**(non-80 지원), (5) **parseAddress host 정규화** — `server_url="http://ip/"` 트레일링 슬래시가 `:port` 조립 시 malformed URL 되어 다운로드 실패하던 버그 수정(실기 중 발견), (6) **재부팅 확인창 + 결과 피드백**(성공 Reboot/실패 Close, 실패 시 재부팅 안 함, blocking HTTP 는 loop 에서). 배포 플로우 확립: FULL 플래시 → LCD 네트워크 입력 → 서버설정/이미지 불러오기(기존 설정 복구) → 이후 OTA. matchRate 98%, FR 7/7 실기 검증. commit `3446930`, branch v2.8-touch-serverfetch. 관련 [[RemoteDeck_Touch_v2.7]] · [[project_touch_pseudo_ntp]].
 
 ### RemoteDeck_Touch_v2.7
 v2.6에서 되살린 Touch 웹 UI를 **RemoteDeck_PC 스타일 5탭(상태/제어/설정/관리/로그)**으로 리뉴얼. 설정을 raw JSON textarea → **항목별 폼**으로 전환하고 sub-tab(Device Config / Server Config / 이미지 관리)으로 정리, 관리 탭에 재부팅·재부팅 스케줄·OTA를 통합. 신규 API `GET/POST /api/serverconfig`·`/api/schedule`(계약 추가, 기존 `/api/config` 불변). Option C(Pragmatic). 신규 기능: **재부팅 스케줄**(단일 주간 요일+HH:MM, NTP, main LCD loop 실행)·**야간 화면 끄기**(nightOff, 시간대 기반, 스크린세이버와 별개, 터치 시 잠깐 wake). 하위호환: JsonUtils default 가드 + 스키마 무파괴. 실기 검증 중 품질 delta 확보 — 썸네일 쿼리스트링(`?t=`) 서버 파싱 수정(400→정상), 이미지 카드 실제 크기(100%) 표시, **Sleep 단일소스 통합**(LCD가 serverConfig→deviceConfig.sleepTime), **재부팅 완전 일원화**(죽은 LCD 위젯·레거시 reboot_time 로직 제거 + reboot_time→rebootSchedule 자동 마이그레이션으로 필드 기기 07:00 재부팅 승계), **간이 NTP(MQTT tick) 유효성 가드**(누락 tick의 1970 시계오염 차단) + currentTime 소프트클록 무조건화. RemoteDeck_PC NTP(SNTP)와 비교 검토: 폐쇄망 특성상 서버-tick 방식 타당. matchRate 97%, FR 13/13, 전 단계(S1~S5) 실기 검증. Carry: pre-v2.7 실기기 마이그레이션·부하 PoC 배포 스모크. 브랜치 `v2.6-touch-webmode`, commit `aa870be` 외. 관련 [[project_touch_webui_bootmode]] · [[feedback_client_version_follows_contract]].
