@@ -7,14 +7,14 @@
         "wifi_mac": "99b61f3a1e99",
         "using_static": false,
         "static_ip": "192.168.1.180",
-        "static_gateway": "255.255.255.0",
-        "static_subnet": "0.0.0.0",
-        "static_primaryDNS": "192.168.1.1",
+        "static_gateway": "192.168.1.1",
+        "static_subnet": "255.255.255.0",
+        "static_primaryDNS": "0.0.0.0",
         "static_secondaryDNS": "0.0.0.0",
         "static_mac": "0A:A6:F7:39:40:FC"
     },
     "server_url": "http://192.168.10.230/",
-    "reboot_time": 7,
+    "reboot_time": 0,
     "sleep_time": 0,
     "web_config_mode": false,
     "night_off": {
