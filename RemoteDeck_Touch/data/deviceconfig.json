@@ -2,20 +2,42 @@
     "device_id": "node_1",
     "network_config": {
         "using_ethernet": true,
-        "wifi_ssid": "XGAiO2G",
-        "wifi_passwd":"xeno1234",
-        "wifi_mac" : "99b61f3a1e99",
+        "wifi_ssid": "",
+        "wifi_passwd": "",
+        "wifi_mac": "99b61f3a1e99",
         "using_static": false,
-        "static_ip": "0.0.0.0",
-        "static_gateway": "0.0.0.0",
-        "static_subnet":"0.0.0.0",
-        "static_primaryDNS":"0.0.0.0",
-        "static_secondaryDNS":"0.0.0.0",
-        "static_mac": "99b61f3a1e99"
+        "static_ip": "192.168.1.180",
+        "static_gateway": "192.168.1.1",
+        "static_subnet": "255.255.255.0",
+        "static_primaryDNS": "0.0.0.0",
+        "static_secondaryDNS": "0.0.0.0",
+        "static_mac": "0A:A6:F7:39:40:FC"
     },
     "server_url": "http://192.168.10.230/",
-    "reboot_time": 7,    
-    "sleep_time": 5,
+    "reboot_time": 0,
+    "sleep_time": 0,
+    "web_config_mode": false,
+    "night_off": {
+        "enabled": true,
+        "start_hour": 19,
+        "start_minute": 0,
+        "end_hour": 8,
+        "end_minute": 0
+    },
+    "reboot_schedule": {
+        "enabled": true,
+        "days": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+        ],
+        "hour": 8,
+        "minute": 0
+    },
     "version_info": {
         "firmware_date": "2024-08-01",
         "server_config_version": "0.0.0",

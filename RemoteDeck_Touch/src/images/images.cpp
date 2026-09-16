@@ -267,7 +267,8 @@ bool read_png_from_spiffs(const char* filepath, lv_img_dsc_t* img_dsc) {
 }
 #endif
 
-// /download/ 우선, fallback /images/ — 디코드 후 LVGL src 갱신
+// v2.8: 이미지 단일 경로 /images/ — 웹 교체·서버 다운로드 모두 여기에 저장(SPIFFS 중복 방지).
+//   (이전 /download/ 별도 경로는 /images/ 기본이미지에 가려져 서버 다운로드가 반영 안 되던 문제)
 // Design Ref: §12.1 — 새 dsc 할당 전 기존 data free
 static void try_set(lv_obj_t* target, lv_img_dsc_t* dsc, const char* role) {
     // v2.1 fix: 디코드 전에 OLD 데이터 먼저 free → 동일 role 메모리 두번 점유 방지
@@ -279,17 +280,15 @@ static void try_set(lv_obj_t* target, lv_img_dsc_t* dsc, const char* role) {
                       role, (unsigned)oldSize, ESP.getFreeHeap());
     }
 
-    // 후보 경로 (PNG 우선, BMP fallback)
-    char buf[4][64];
-    snprintf(buf[0], sizeof(buf[0]), "/download/%s.png", role);
-    snprintf(buf[1], sizeof(buf[1]), "/download/%s.bmp", role);
-    snprintf(buf[2], sizeof(buf[2]), "/images/%s.png",   role);
-    snprintf(buf[3], sizeof(buf[3]), "/images/%s.bmp",   role);
-    const char* candidates[4] = { buf[0], buf[1], buf[2], buf[3] };
+    // v2.8: 단일 경로 /images/ (PNG 우선, BMP fallback). 서버 다운로드도 /images/ 에 저장됨.
+    char buf[2][64];
+    snprintf(buf[0], sizeof(buf[0]), "/images/%s.png", role);
+    snprintf(buf[1], sizeof(buf[1]), "/images/%s.bmp", role);
+    const char* candidates[2] = { buf[0], buf[1] };
 
     lv_img_dsc_t tmp = {};
     bool ok = false;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 2; ++i) {
         if (!SPIFFS.exists(candidates[i])) continue;
         if (decode_image_from_spiffs(candidates[i], &tmp)) {
             ok = true;

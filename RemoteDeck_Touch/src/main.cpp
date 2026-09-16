@@ -113,6 +113,63 @@ static void webmodeBtn_cb(lv_event_t * e)
     lv_obj_center(mbox);
 }
 
+// v2.8: 장치설정 "서버설정/이미지 불러오기" 버튼 — 확인창 → (loop에서) fetch → 결과창.
+//   fetch 는 blocking HTTP 라 LVGL 이벤트 콜백에서 직접 돌리지 않고 loop 에서 처리(g_pendingFetch).
+bool fetchServerInfo();   // fwd (정의는 아래) — serverconfig 만
+bool fetchImageFiles();   // fwd (정의는 아래) — imagesconfig + 고정 역할 BMP
+static volatile int g_pendingFetch = 0;   // 0 없음 / 1 서버설정 / 2 이미지
+
+// 결과창 콜백: Reboot → 재부팅, 그 외 → 닫기
+static void fetchResult_cb(lv_event_t * e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    const char* btn = lv_msgbox_get_active_btn_text(mbox);
+    if (btn && strcmp(btn, "Reboot") == 0) { delay(200); ESP.restart(); }
+    lv_msgbox_close_async(mbox);
+}
+
+// loop 에서 호출 — 대기중 fetch 실행 후 결과창 표시 (성공: Reboot / 실패: Close)
+static void runPendingFetch() {
+    if (!g_pendingFetch) return;
+    int which = g_pendingFetch;
+    g_pendingFetch = 0;
+
+    bool ok = (which == 1) ? fetchServerInfo() : fetchImageFiles();
+
+    static const char* okBtns[]   = { "Reboot", "" };
+    static const char* failBtns[] = { "Close", "" };
+    const char* title = (which == 1) ? "Server Config" : "Image Config";
+    const char* msg = ok ? "Loaded from server.\nReboot to apply."
+                         : "Load failed.\nCheck server. No change.";
+    lv_obj_t* r = lv_msgbox_create(NULL, title, msg, ok ? okBtns : failBtns, false);
+    lv_obj_add_event_cb(r, fetchResult_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_center(r);
+}
+
+// 확인창 콜백: OK → 대기 플래그 세팅(실제 fetch 는 loop). Cancel → 닫기만.
+static void fetchConfirm_cb(lv_event_t * e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    const char* btn = lv_msgbox_get_active_btn_text(mbox);
+    if (btn && strcmp(btn, "OK") == 0)
+        g_pendingFetch = (int)(intptr_t)lv_event_get_user_data(e);
+    lv_msgbox_close_async(mbox);
+}
+
+// DeviceManager 버튼에서 호출 (extern) — 확인창 표시
+void promptFetchServerInfo() {
+    static const char* btns[] = { "OK", "Cancel", "" };
+    lv_obj_t* m = lv_msgbox_create(NULL, "Server Config",
+        "Load server config from\nserver and reboot?", btns, false);
+    lv_obj_add_event_cb(m, fetchConfirm_cb, LV_EVENT_VALUE_CHANGED, (void*)(intptr_t)1);
+    lv_obj_center(m);
+}
+void promptFetchImageFiles() {
+    static const char* btns[] = { "OK", "Cancel", "" };
+    lv_obj_t* m = lv_msgbox_create(NULL, "Image Config",
+        "Load images from\nserver and reboot?", btns, false);
+    lv_obj_add_event_cb(m, fetchConfirm_cb, LV_EVENT_VALUE_CHANGED, (void*)(intptr_t)2);
+    lv_obj_center(m);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -277,6 +334,8 @@ void loop()
 
     lvgl_loop();    //lvgl 화면 갱신, 화면보호기 체크
 
+    runPendingFetch();  // v2.8: 장치설정 서버설정/이미지 불러오기 (확인창 OK 후 실행)
+
     // v2.7: NTP currentTime 소프트 클록 — MQTT tick 사이 millis() 로 초 단위 보간.
     //   재부팅 스케줄/야간 화면 끄기가 tick 사이에도 정확한 시각을 쓰도록 매 루프 진행.
     //   (기존엔 레거시 reboot_time>0 블록이 이 역할을 겸했으나, 통합하며 무조건화)
@@ -394,99 +453,65 @@ void ethernetInfo_Changed() {
     ESP.restart();  // 또는 ESP.reset(); 을 사용    
 }
 
-// devicemanager에서 서버 정보 내려받기
-void fetchServerInfo() {
-    //서버에서 serverConfig json 가져와서 로컬 저장
-    String url = "/iot_device/serverconfig.json";
+// devicemanager "서버 설정 불러오기" — 서버에서 serverconfig 만 가져와 교체.
+//   v2.7: deviceconfig(개별 기기 정보=IP/deviceID/네트워크 등)는 서버에서 받지 않음.
+//         설계의도 — 공통 시스템 정보(serverconfig)만 서버에서 일괄, 개별 기기 설정은
+//         LCD 장치설정 + 웹 인터페이스에서만 관리. (기존: deviceconfig 까지 덮어써 IP/설정 유실 위험)
+//   반환: 성공 여부. 재부팅/확인창은 호출측(promptFetchServerInfo)에서 처리.
+bool fetchServerInfo() {
+    String url = "/iot_device/serverconfig.json";   // 전체 공통 serverconfig (device_id 무관)
+    if (!downloadFile(url.c_str(), SERVER_DOWNLOAD_PATH)) return false;
+    Serial.print("Download serverconfig json : "); Serial.println(url.c_str());
 
-    if(downloadFile(url.c_str(), SERVER_DOWNLOAD_PATH)) {
-        Serial.print("Download serverconfig json : ");
-        Serial.println(url.c_str());
-
-        if(ConfigManager::loadServerConfig(serverConfig, SERVER_DOWNLOAD_PATH)) {
-            ConfigManager::saveServerConfig(serverConfig);
-            Serial.println("Save serverconfig Info");
-            FileUtils::remove(SERVER_DOWNLOAD_PATH);
-        }
+    if (!ConfigManager::loadServerConfig(serverConfig, SERVER_DOWNLOAD_PATH)) {
+        FileUtils::remove(SERVER_DOWNLOAD_PATH);
+        return false;
     }
-
-    // 서버에서 deviceConfig json 가져와서 로컬 저장
-    url = TypeUtils::replaceID(serverConfig.imageUrl, deviceConfig.deviceID).c_str();
-    String urlPath = url + "deviceconfig.json";
-
-    if(downloadFile(urlPath.c_str(), DEVICE_DOWNLOAD_PATH)) {
-        Serial.println("Download deviceconfig json");
-
-        if(ConfigManager::loadDeviceConfig(deviceConfig, DEVICE_DOWNLOAD_PATH)) {
-            ConfigManager::saveDeviceConfig(deviceConfig);
-            Serial.println("Save deivceconfig Info");
-            FileUtils::remove(DEVICE_DOWNLOAD_PATH);
-        }
-    } 
-
-    // 약간의 딜레이 후 재부팅
-    delay(1000);  // 1초 대기 후 재부팅
-
-    lv_scr_load(ui_ScreenLogo);
-    lv_timer_handler(); 
-
-    delay(500);
-
-    ESP.restart();  // 또는 ESP.reset(); 을 사용  
+    ConfigManager::saveServerConfig(serverConfig);
+    FileUtils::remove(SERVER_DOWNLOAD_PATH);
+    Serial.println("Save serverconfig Info");
+    return true;
 }
 
-// devicemanager에서 UI image 파일 내려받기
-void fetchImageFiles() {
-    // JSON 파일 다운로드 및 저장
-    // image url    "/iot_device/[device_id]/" - [device_id]자리에 장치 id 넣어서 완성
+// devicemanager "UI 이미지 불러오기" — 서버에서 imagesconfig + 고정 역할 이미지 다운로드.
+//   v2.7: 역할 고정(title/photo/name). BMP 는 /download/ 에 저장 →
+//         LCD 로더가 /images/(웹 업로드) 우선, 없으면 /download/(서버) 사용.
+//   반환: 하나라도 받았으면 true. 재부팅/확인창은 호출측(promptFetchImageFiles)에서 처리.
+bool fetchImageFiles() {
+    // image url  "/iot_device/[device_id]/" — [device_id] 치환
     String url = TypeUtils::replaceID(serverConfig.imageUrl, deviceConfig.deviceID).c_str();
-    String urlPath = url + "imagesconfig.json";
+    bool anyOk = false;
 
-    if(downloadFile(urlPath.c_str(), IMAGES_DOWNLOAD_PATH)) {
-        Serial.println("Download imagesconfig json");
-
-        if(ConfigManager::loadImagesConfig(imagesConfig, IMAGES_DOWNLOAD_PATH)) {
+    // imagesconfig(버전/정보) — 역할은 고정이라 이미지 목록은 참고용
+    String cfgPath = url + "imagesconfig.json";
+    if (downloadFile(cfgPath.c_str(), IMAGES_DOWNLOAD_PATH)) {
+        if (ConfigManager::loadImagesConfig(imagesConfig, IMAGES_DOWNLOAD_PATH)) {
             ConfigManager::saveImagesConfig(imagesConfig);
             Serial.println("Save imagesconfig Info");
-            FileUtils::remove(IMAGES_DOWNLOAD_PATH);
         }
-    } 
-
-    // BMP 파일 다운로드 및 저장
-    urlPath = url;
-    urlPath += "title.bmp";
-    
-    if(downloadFile(urlPath.c_str(), "/download/title.bmp")) {
-        Serial.println("Download title.bmp Images Resource");
+        FileUtils::remove(IMAGES_DOWNLOAD_PATH);
     }
 
-    urlPath = url;
-    urlPath += "photo.bmp";
-    
-    if(downloadFile(urlPath.c_str(), "/download/photo.bmp")) {
-        Serial.println("Download photo.bmp Images Resource");
-    }
-
-    urlPath = url;
-    urlPath += "name.bmp";
-
-    if(downloadFile(urlPath.c_str(), "/download/name.bmp")) {
-        Serial.println("Download name.bmp Images Resource");
+    // v2.8: 단일 경로 /images/ 에 저장 (웹 교체와 동일 위치 → 중복 없음, 재부팅 후 즉시 반영).
+    //   같은 role 의 잔여 다른포맷(png)·구 /download/ 파일 정리 → 그림자/SPIFFS 낭비 방지.
+    static const char* ROLES[] = { "title", "photo", "name" };
+    for (const char* role : ROLES) {
+        String src = url + role + ".bmp";
+        String dst = String("/images/") + role + ".bmp";
+        SPIFFS.remove(String("/images/")   + role + ".png");   // 잔여 다른포맷 제거(가림 방지)
+        SPIFFS.remove(String("/download/")  + role + ".bmp");  // 구 경로 정리(SPIFFS 회수)
+        SPIFFS.remove(String("/download/")  + role + ".png");
+        if (downloadFile(src.c_str(), dst.c_str())) {
+            anyOk = true;
+            Serial.printf("Download %s.bmp -> /images/\n", role);
+        } else {
+            Serial.printf("Download %s.bmp FAILED\n", role);
+        }
     }
 
     FileUtils::list("/images");
-    FileUtils::list("/download");
-    Serial.printf("Free heap before malloc: %d bytes\n", ESP.getFreeHeap());
-
-     // 약간의 딜레이 후 재부팅
-    delay(1000);  // 1초 대기 후 재부팅
-
-    lv_scr_load(ui_ScreenLogo);
-    lv_timer_handler(); 
-
-    delay(500);
-
-    ESP.restart();  // 또는 ESP.reset(); 을 사용   
+    Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+    return anyOk;
 }
 
 // MQTT 메시지 수신 콜백 함수
@@ -590,7 +615,8 @@ void gotoDeviceManager()
 // v2.1 C4: HTTPClient (ESP32 내장) 기반 — Design §11.2
 // Plan SC: FR-06, FR-07 (HTTPClient 호환)
 bool downloadFile(const char* urlPath, const char* spiffsPath) {
-    String fullUrl = String("http://") + httpUrl + urlPath;
+    // v2.7 fix: httpPort 반영 (parseAddress 가 포트 파싱, 기본 80) — non-80 서버 지원
+    String fullUrl = String("http://") + httpUrl + ":" + String(httpPort) + urlPath;
     http.setTimeout(10000);
     http.setConnectTimeout(10000);
 
@@ -698,7 +724,8 @@ bool downloadFile(const char* urlPath, const char* spiffsPath) {
 void sendHttpMessage(const char* msg) {
     // v2.1 C4: HTTPClient 기반
     std::string httpRequestPath = TypeUtils::makeHttpPath(serverConfig.statusUrl, deviceConfig.deviceID, msg);
-    String fullUrl = String("http://") + httpUrl + httpRequestPath.c_str();
+    // v2.7 fix: httpPort 반영 (non-80 서버 지원)
+    String fullUrl = String("http://") + httpUrl + ":" + String(httpPort) + httpRequestPath.c_str();
     Serial.print("Sending GET request to: ");
     Serial.println(fullUrl);
 
