@@ -86,6 +86,40 @@ function updateDashboard(d) {
       card.style.display = 'none';
     }
   }
+
+  // rcm-hub-v3.0 §6.4: RCM 허브 카드 (hub_enabled 시 표시)
+  updateHubCard(d);
+}
+
+// rcm-hub-v3.0 §6.4: 정지 사유 한글 매핑 (stop_reason = "<code> <reason>")
+const HUB_STOP_TEXT = {
+  '4001': '장비 키 또는 제품번호 오류',
+  '4009': '같은 제품번호 장비가 이미 접속 중',
+  '4010': '버전 불일치'
+};
+function updateHubCard(d) {
+  const card = document.getElementById('hub-card');
+  if (!card || d.hub_enabled === undefined) return;
+  if (!d.hub_enabled) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const badge = document.getElementById('hub-badge');
+  const reasonEl = document.getElementById('hub-reason');
+  const reason = d.hub_stop_reason || '';
+  let reasonText = '';
+  if (d.hub_connected) {
+    badge.textContent = '● 연결됨'; badge.className = 'hub-badge ok';
+  } else if (d.hub_stopped) {
+    badge.textContent = '● 정지'; badge.className = 'hub-badge fail';
+    const code = reason.split(' ')[0];
+    reasonText = (HUB_STOP_TEXT[code] ? HUB_STOP_TEXT[code] + ' (' + code + ')' : reason) + ' — 설정 확인 후 재부팅하세요';
+  } else {
+    badge.textContent = '● 연결 중'; badge.className = 'hub-badge wait';
+    if (reason === 'config incomplete') reasonText = '설정 불완전: 허브 주소·제품번호·장비 키를 입력하세요';
+  }
+  document.getElementById('hub-addr').textContent = d.hub_host || '--';
+  document.getElementById('hub-pid').textContent = d.hub_product_id || '--';
+  reasonEl.textContent = reasonText;
+  reasonEl.style.display = reasonText ? '' : 'none';
 }
 
 // v2.6.2: attendance 전송 이력 (5s 폴링)
@@ -299,6 +333,17 @@ function loadConfig() {
     document.getElementById('cfg-att-source').value = d.attendance?.source || 'pcled';
     document.getElementById('cfg-att-on').value = d.web_request?.attendance_on || '';
     document.getElementById('cfg-att-off').value = d.web_request?.attendance_off || '';
+
+    // rcm-hub-v3.0 RCM-API 연동 (device_key는 가려서 옴: "****" = 저장됨)
+    document.getElementById('cfg-hub-enabled').checked = d.hub?.enabled || false;
+    document.getElementById('cfg-hub-host').value = d.hub?.host || '';
+    document.getElementById('cfg-hub-port').value = d.hub?.port || 8891;
+    document.getElementById('cfg-hub-path').value = d.hub?.path || '/v1/ws';
+    document.getElementById('cfg-hub-tls').checked = d.hub?.tls || false;
+    document.getElementById('cfg-hub-pid').value = d.hub?.product_id || '';
+    const keyEl = document.getElementById('cfg-hub-key');
+    keyEl.value = '';
+    keyEl.placeholder = d.hub?.device_key ? '저장됨 (변경 시에만 입력)' : '장비 키 입력';
   });
 }
 
@@ -350,24 +395,26 @@ function saveNetwork() {
   });
 }
 
+// Resolve hostname to IP for ESP32 Ethernet compatibility (MQTT broker, RCM hub host 공용)
+async function resolveHostToIp(host) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return host;
+  try {
+    const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(host) + '&type=A');
+    const dnsData = await dnsResp.json();
+    const aRecord = dnsData.Answer?.find(a => a.type === 1);
+    if (aRecord && confirm(host + ' → ' + aRecord.data + '\nIP로 변환하여 저장하시겠습니까?\n(ESP32 Ethernet DNS 제한)')) {
+      return aRecord.data;
+    }
+  } catch(e) { /* DNS failed, save hostname as-is */ }
+  return host;
+}
+
 // ─── Save: MQTT (no reboot) ───
 async function saveMQTT() {
   const enabled = document.getElementById('cfg-mqtt-enable').checked;
   let broker = document.getElementById('cfg-mqtt-broker').value;
   // Resolve hostname to IP for ESP32 Ethernet compatibility
-  if (enabled && broker && !/^\d{1,3}(\.\d{1,3}){3}$/.test(broker)) {
-    try {
-      const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(broker) + '&type=A');
-      const dnsData = await dnsResp.json();
-      const aRecord = dnsData.Answer?.find(a => a.type === 1);
-      if (aRecord) {
-        const resolvedIP = aRecord.data;
-        if (confirm(broker + ' → ' + resolvedIP + '\nIP로 변환하여 저장하시겠습니까?\n(ESP32 Ethernet DNS 제한)')) {
-          broker = resolvedIP;
-        }
-      }
-    } catch(e) { /* DNS failed, save hostname as-is */ }
-  }
+  if (enabled && broker) broker = await resolveHostToIp(broker);
   const cfg = {
     mqtt: {
       broker: enabled ? broker : '',
@@ -465,7 +512,12 @@ async function testMQTT() {
 }
 
 // ─── Save: Etc (no reboot) ───
-function saveEtc() {
+async function saveEtc() {
+  // rcm-hub-v3.0 §6.3: 허브 주소 hostname → IP 변환 (ESP32 Ethernet DNS 제한, saveMQTT와 같은 방식)
+  const hubEnabled = document.getElementById('cfg-hub-enabled').checked;
+  let hubHost = document.getElementById('cfg-hub-host').value.trim();
+  if (hubEnabled && hubHost) hubHost = await resolveHostToIp(hubHost);
+  const hubKey = document.getElementById('cfg-hub-key').value.trim();
   const cfg = {
     relay: {
       pulse_short_ms: parseInt(document.getElementById('cfg-relay-short').value) || 500,
@@ -490,6 +542,16 @@ function saveEtc() {
     web_request: {
       attendance_on: document.getElementById('cfg-att-on').value,
       attendance_off: document.getElementById('cfg-att-off').value
+    },
+    // rcm-hub-v3.0 RCM-API 연동 (키를 비워 두면 "****" = 기존 키 유지)
+    hub: {
+      enabled: hubEnabled,
+      host: hubHost,
+      port: parseInt(document.getElementById('cfg-hub-port').value) || 8891,
+      path: document.getElementById('cfg-hub-path').value.trim() || '/v1/ws',
+      tls: document.getElementById('cfg-hub-tls').checked,
+      product_id: document.getElementById('cfg-hub-pid').value.trim(),
+      device_key: hubKey || '****'
     }
   };
   fetch('/api/config', {

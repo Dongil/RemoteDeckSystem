@@ -22,6 +22,16 @@
 
 <!-- 홈 -->
 <section id="home" class="page active">
+  <!-- rcm-hub-v3.0 §6.4: RCM 허브 카드 (hub_enabled 시 표시) -->
+  <div class="card hub-card" id="hub-card" style="display:none">
+    <div class="hub-header">
+      <h2>🔗 RCM 허브</h2>
+      <span class="hub-badge wait" id="hub-badge">● 연결 중</span>
+    </div>
+    <div class="hub-info">허브 <span id="hub-addr">--</span> · 제품번호 <span id="hub-pid">--</span></div>
+    <div class="hub-reason" id="hub-reason" style="display:none"></div>
+  </div>
+
   <!-- v2.6.2: 재부재 시스템 카드 (attendance.enabled 시 표시) -->
   <div class="card attendance-card" id="attendance-card" style="display:none">
     <div class="att-header">
@@ -229,6 +239,19 @@
       <div class="cfg-group"><label>ON URL (재실)</label><input type="text" id="cfg-att-on" style="max-width:100%" placeholder="http://server/attend?d=[device_id]&s=on"></div>
       <div class="cfg-group"><label>OFF URL (부재)</label><input type="text" id="cfg-att-off" style="max-width:100%" placeholder="http://server/attend?d=[device_id]&s=off"></div>
       <p style="color:#666;font-size:11px">플레이스홀더: [device_id] [device_name] [ip] [mac] [event] [value]</p>
+    </div>
+    <!-- rcm-hub-v3.0 §6.4: RCM-API 연동 카드 (재부재 시스템 아래, saveEtc로 저장) -->
+    <div class="card">
+      <h2>RCM-API 연동</h2>
+      <p style="color:#888;font-size:12px;margin-bottom:8px">RCM 허브에 SmartDeck(deck)으로 접속해 허브 명령으로 PC 전원을 켜고 끄며, PC 전원 LED 상태를 바로 보고합니다.</p>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-hub-enabled"> RCM 허브 연동하기</label></div>
+      <div class="cfg-group"><label>허브 주소</label><input type="text" id="cfg-hub-host" placeholder="192.168.10.5 (IP 권장)"></div>
+      <div class="cfg-group"><label>포트</label><input type="number" id="cfg-hub-port" value="8891"></div>
+      <div class="cfg-group"><label>경로</label><input type="text" id="cfg-hub-path" value="/v1/ws"></div>
+      <div class="cfg-group"><label><input type="checkbox" id="cfg-hub-tls"> TLS (wss)</label></div>
+      <div class="cfg-group"><label>제품번호</label><input type="text" id="cfg-hub-pid" placeholder="녹화장비와 같은 제품번호"></div>
+      <div class="cfg-group"><label>장비 키</label><input type="password" id="cfg-hub-key" autocomplete="new-password" placeholder="장비 키 입력"></div>
+      <p style="color:#e0a040;font-size:11px;line-height:1.5">⚠ 사용 시: 스케줄의 릴레이1 전원 동작과 MQTT가 비활성되고, 릴레이1을 켜 둔 채로 두는 명령(ON)은 거부됩니다(펄스는 허용).<br>허브 주소는 이더넷 DNS 제한으로 IP를 권장합니다. 저장 후 재부팅해야 적용됩니다.</p>
     </div>
     <div class="btn-row">
       <button onclick="saveEtc()">저장</button>

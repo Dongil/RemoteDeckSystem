@@ -92,3 +92,14 @@ input[type="checkbox"]{accent-color:#0ff}
 .led-dot{width:14px;height:14px;border-radius:50%;display:inline-block}
 .led-dot.on{background:#4ac86e;box-shadow:0 0 6px #4ac86e88}
 .led-dot.off{background:#f04a4a;box-shadow:0 0 6px #f04a4a88}
+/* rcm-hub-v3.0 §6.4: RCM 허브 카드 */
+.hub-card{margin-bottom:12px;padding:16px}
+.hub-card .hub-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.hub-card .hub-header h2{border-bottom:none;padding-bottom:0}
+.hub-badge{font-size:13px;font-weight:bold;padding:3px 10px;border-radius:10px;background:#0f3460}
+.hub-badge.ok{color:#4ac86e}
+.hub-badge.wait{color:#e0c040}
+.hub-badge.fail{color:#f04a4a}
+.hub-card .hub-info{font-size:13px;color:#aaa}
+.hub-card .hub-info span{color:#e0e0e0}
+.hub-card .hub-reason{margin-top:8px;font-size:13px;color:#f04a4a}

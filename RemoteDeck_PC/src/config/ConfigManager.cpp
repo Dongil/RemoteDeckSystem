@@ -67,8 +67,8 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     config.ntp.timezone = doc["ntp"]["timezone"] | "KST-9";
 
     // Firmware
-    config.firmware.version = doc["firmware"]["version"] | "2.6.2";
-    config.firmware.date = doc["firmware"]["date"] | "2026-07-03";
+    config.firmware.version = doc["firmware"]["version"] | "3.0.0";
+    config.firmware.date = doc["firmware"]["date"] | "2026-11-09";
 
     // Auth
     config.auth.user = doc["auth"]["user"] | "admin";
@@ -98,6 +98,16 @@ bool ConfigManager::load(DeviceConfig& config, const char* path) {
     JsonObject att = doc["attendance"].as<JsonObject>();
     config.attendance.enabled = att["enabled"] | false;
     config.attendance.source  = att["source"]  | "pcled";
+
+    // Design Ref: rcm-hub-v3.0 §3.3 — hub 블록 (하위호환: 없으면 disabled 기본)
+    JsonObject hub = doc["hub"].as<JsonObject>();
+    config.hub.enabled   = hub["enabled"]    | false;
+    config.hub.host      = hub["host"]       | "";
+    config.hub.port      = hub["port"]       | 8891;
+    config.hub.path      = hub["path"]       | "/v1/ws";
+    config.hub.tls       = hub["tls"]        | false;
+    config.hub.productId = hub["product_id"] | "";
+    config.hub.deviceKey = hub["device_key"] | "";
 
     Serial.printf("ConfigManager: Loaded config for %s\n", config.deviceId.c_str());
     return true;
@@ -194,6 +204,18 @@ bool ConfigManager::save(const DeviceConfig& config, const char* path) {
     att["enabled"] = config.attendance.enabled;
     att["source"]  = config.attendance.source;
 
+    // Design Ref: rcm-hub-v3.0 §3.3 — hub 블록 (device_key는 장비 내부에만 평문 저장)
+    JsonObject hub = doc.createNestedObject("hub");
+    hub["enabled"]    = config.hub.enabled;
+    hub["host"]       = config.hub.host;
+    hub["port"]       = config.hub.port;
+    hub["path"]       = config.hub.path;
+    hub["tls"]        = config.hub.tls;
+    hub["product_id"] = config.hub.productId;
+    hub["device_key"] = config.hub.deviceKey;
+
+    if (doc.overflowed()) Serial.println("ConfigManager: WARNING JSON doc overflowed on save");
+
     File file = SPIFFS.open(path, "w");
     if (!file) {
         Serial.printf("ConfigManager: Failed to open %s for writing\n", path);
@@ -241,10 +263,13 @@ void ConfigManager::loadDefaults(DeviceConfig& config) {
     config.wol.targetMac = "";
     config.ntp.server = "pool.ntp.org";
     config.ntp.timezone = "KST-9";
-    config.firmware.version = "2.6.2";
-    config.firmware.date = "2026-07-03";
+    config.firmware.version = "3.0.0";
+    config.firmware.date = "2026-11-09";
     config.auth.user = "admin";
     config.auth.pass = "12345";
     // Web Request defaults (disabled)
     config.webRequest = WebRequestConfig();
+    config.attendance = AttendanceConfig();
+    // Design Ref: rcm-hub-v3.0 §3.3 — hub defaults (disabled)
+    config.hub = HubConfig();
 }

@@ -20,6 +20,7 @@
 9. [하드웨어 사양](#9-하드웨어-사양)
 10. [배선 가이드](#10-배선-가이드)
 11. [문제 해결](#11-문제-해결)
+12. [RCM 허브 연동 (v3.0)](#12-rcm-허브-연동-v30)
 
 ---
 
@@ -170,7 +171,7 @@ IPSetupTool은 장치의 IP 주소 및 네트워크 설정을 구성하는 Windo
 | **네트워크** | 장치 ID/이름, 네트워크 모드, 이더넷/WiFi IP 설정 → 저장 시 재부팅 |
 | **MQTT** | 브로커 주소, 포트, 인증, 토픽, 연결 테스트 |
 | **계정** | 관리자 ID/패스워드 변경 |
-| **기타** | 릴레이 펄스 시간, PC 모니터링 주기, WOL MAC, NTP |
+| **기타** | 릴레이 펄스 시간, PC 모니터링 주기, WOL MAC, NTP, 재부재 시스템, RCM-API 연동(v3.0, [12장](#12-rcm-허브-연동-v30)) |
 | **Web Request** | 활성화 토글, 이벤트별 URL, 플레이스홀더 |
 
 #### 펌웨어
@@ -209,9 +210,17 @@ GET /api/status
   "fw_ver": "2.2.0",
   "device_name": "새기기",
   "mqtt_connected": true,
-  "time": "15:30:00"
+  "time": "15:30:00",
+  "hub_enabled": true,
+  "hub_connected": true,
+  "hub_stopped": false,
+  "hub_stop_reason": "",
+  "hub_host": "192.168.10.5:8891",
+  "hub_product_id": "XHR131258"
 }
 ```
+
+> v3.0: `hub_*` 필드 추가(허브 미사용 시 `hub_enabled:false`). 기존 필드는 변경 없음.
 
 #### 릴레이 제어
 
@@ -229,6 +238,8 @@ Content-Type: application/json
 | `{"cmd":"pulse","relay":1,"duration":5000}` | 릴레이1 긴 펄스 (5초) |
 
 **응답:** `{"ok":true}`
+
+> v3.0: RCM 허브 연동 사용 시 릴레이1 `state:"on"`(켜 둔 채로 두기)은 거부됩니다 → `409 {"ok":false,"error":"relay1 latch blocked: RCM hub enabled (use pulse)"}`. 펄스와 OFF는 허용. MQTT/RS485의 같은 명령도 실행되지 않고 로그(`GUARD`)만 남습니다.
 
 #### Wake-on-LAN
 
@@ -266,7 +277,7 @@ DELETE /api/schedule?id=1  스케줄 삭제
 ```
 POST /api/reboot          장치 재부팅
 POST /api/auth            계정 변경 (current_pass, new_user, new_pass 필요)
-POST /api/ota             펌웨어 업로드 (multipart/form-data)
+POST /api/ota             펌웨어/SPIFFS 업로드 (multipart/form-data, v3.0부터 Basic Auth 필수)
 GET  /api/log             이벤트 로그 조회
 ```
 
@@ -620,6 +631,58 @@ PC 케이스 전원 버튼과 **병렬** 연결:
 | 릴레이 동작하지만 PC 안 켜짐 | 배선 오류 | F_PANEL PWR_BTN(핀 3,4) 확인, COM/NO 연결 확인 |
 | Web Request 호출 안됨 | enabled=false 또는 URL 미입력 | 웹 UI → 설정 → Web Request에서 활성화 및 URL 확인 |
 | 펌웨어 업로드 실패 | 파일 크기 초과 | 파티션 크기 확인, .bin 파일이 올바른지 확인 |
+| 펌웨어 업로드 401 (v3.0) | OTA 인증 추가 | 웹 UI에서 로그인 후 업로드, curl은 `-u admin:12345` |
+| 홈 RCM 허브 카드 "정지 (4001)" | 장비 키 또는 제품번호 오류 | 서버 담당에게 받은 키·제품번호 확인 후 저장 → 재부팅 |
+| 홈 RCM 허브 카드 "정지 (4009)" | 같은 제품번호 장비가 이미 접속 중 | 제품번호 중복 확인 |
+| 홈 RCM 허브 카드 "연결 중"이 계속 | 허브 미도달 또는 설정 불완전 | 허브 주소(IP)·포트 확인, 로그 탭 `HUB` 항목 확인 |
+
+---
+
+## 12. RCM 허브 연동 (v3.0)
+
+RemoteDeck_PC가 RCM 허브에 SmartDeck(`deck`)으로 접속해, 허브 명령으로 PC 전원 버튼(릴레이1)을 누르고 PC 전원 LED 상태를 바로 보고합니다. 규격은 `rcm-api` 저장소(v1)를 따릅니다.
+
+### 12.1 설정
+
+웹 UI → 설정 → 기타 → **RCM-API 연동** 카드 → 저장 → **재부팅**(재부팅 후 적용).
+
+| 항목 | 설명 | 기본값 |
+|------|------|--------|
+| RCM 허브 연동하기 | 사용 여부 | 해제 |
+| 허브 주소 | RCM 서버 IP (hostname 입력 시 저장 때 IP 변환 확인) | — |
+| 포트 / 경로 | 허브 WebSocket | 8891 / `/v1/ws` |
+| TLS (wss) | 암호화 접속 | 해제 |
+| 제품번호 | 짝이 되는 녹화장비와 **같은** 제품번호 | — |
+| 장비 키 | 서버 담당이 발급(`tools/device-key.js --role deck`). 조회 시 `****`로 표시, 비워 두면 기존 키 유지 | — |
+
+설정 키(`deviceconfig.json`): `hub.enabled / host / port / path / tls / product_id / device_key`. `/api/config`와 UDP `GET_CONFIG` 응답에서 `device_key`는 가려집니다.
+
+### 12.2 동작
+
+- `pc.powerOn`은 LED가 꺼져 있을 때만, `pc.forceOff`는 켜져 있을 때만 버튼을 누릅니다. 이미 원하는 상태면 누르지 않습니다.
+- LED가 바뀌면 즉시 허브에 보고합니다. 허브 연결이 끊기면 자동 재접속(0.5초 → 10초)합니다.
+- 키 오류(4001), 제품번호 중복(4009), 버전 불일치(4010)로 허브가 닫으면 재접속하지 않고 홈 카드에 사유를 표시합니다.
+
+### 12.3 운영 원칙 (허브 사용 시)
+
+허브를 쓰는 동안 **전원 명령 경로는 허브 하나**입니다. 충돌을 막기 위해 다음이 자동으로 바뀝니다.
+
+| 기능 | 허브 사용 시 |
+|------|-------------|
+| 스케줄의 릴레이1 전원 동작(on/off/toggle) | 실행 안 함(로그 `SCHEDULE … skipped (RCM hub)`). 전원 스케줄은 서버가 담당. 릴레이2 스케줄은 그대로 |
+| 릴레이1 ON 유지(latch) 명령 — HTTP/MQTT/RS485 | 거부(HTTP 409). 펄스·OFF는 점검용으로 허용 |
+| MQTT | 시작 안 함(연결 시도가 허브 heartbeat를 막기 때문). 설정값은 보존 |
+
+허브 미사용(기본) 시에는 v2.6.2와 동작이 같습니다.
+
+### 12.4 시험 (설치 시)
+
+```bash
+# 개발 PC에서 (rcm-api 저장소)
+node tools/conformance.js --role deck --productid <제품번호> --ip <장치IP> --port 8899
+#   출력된 장비 키를 RCM-API 카드에 입력: 허브 주소=<개발 PC IP>, 포트=8899 → 저장 → 재부팅
+node tools/conformance.js --role deck --productid <제품번호> --with power,led,reboot
+```
 
 ---
 

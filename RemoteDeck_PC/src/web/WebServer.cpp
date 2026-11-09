@@ -7,6 +7,10 @@ void WebServer::begin(uint16_t port, const AuthConfig* auth) {
     _server = new AsyncWebServer(port);
 
     _ws.begin(_server);
+    // Design Ref: rcm-hub-v3.0 §4.4 — OTA 업로드도 다른 API와 같은 Basic 인증
+    _ota.setAuthCheck([this](AsyncWebServerRequest* req) {
+        return !_auth || req->authenticate(_auth->user.c_str(), _auth->pass.c_str());
+    });
     _ota.setup(_server);
 
     setupStaticFiles();
@@ -61,7 +65,11 @@ void WebServer::setupAPI() {
                 action = doc["action"] | "toggle";
             }
             uint16_t duration = doc["duration"] | 500;
-            _handleRelay(relay, action, duration);
+            if (!_handleRelay(relay, action, duration)) {
+                req->send(409, "application/json",
+                          "{\"ok\":false,\"error\":\"relay1 latch blocked: RCM hub enabled (use pulse)\"}");
+                return;
+            }
             req->send(200, "application/json", "{\"ok\":true}");
         }
     );

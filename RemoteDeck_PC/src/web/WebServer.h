@@ -12,7 +12,8 @@ public:
     WebSocketHandler& ws() { return _ws; }
 
     using StatusGetter = std::function<String()>;
-    using RelayHandler = std::function<void(uint8_t relay, const String& action, uint16_t duration)>;
+    // rcm-hub-v3.0 §4.3: false = 거부(409, 허브 사용 시 릴레이1 latch)
+    using RelayHandler = std::function<bool(uint8_t relay, const String& action, uint16_t duration)>;
     using ConfigGetter = std::function<String()>;
     using ConfigSetter = std::function<bool(const String& json)>;
     using ScheduleGetter = std::function<String()>;

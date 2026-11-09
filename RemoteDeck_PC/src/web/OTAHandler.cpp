@@ -61,6 +61,13 @@ void OTAHandler::setup(AsyncWebServer* server, const char* path) {
     server->on(path, HTTP_POST,
         // Response handler (called after upload completes)
         [this](AsyncWebServerRequest* request) {
+            // Design Ref: rcm-hub-v3.0 §4.4 — 인증 실패 업로드는 Update를 시작하지 않았으므로 성공으로 보면 안 됨
+            if (_rejected || (_authCheck && !_authCheck(request))) {
+                _rejected = false;
+                _pendingCmd = U_FLASH;
+                request->requestAuthentication("RemoteDeck");
+                return;
+            }
             bool success = !Update.hasError();
             AsyncWebServerResponse* response = request->beginResponse(200, "application/json",
                 success ? "{\"ok\":true,\"progress\":100}" : "{\"ok\":false,\"error\":\"Update failed\"}");
@@ -81,6 +88,14 @@ void OTAHandler::setup(AsyncWebServer* server, const char* path) {
         // Upload handler (called for each chunk)
         [this](AsyncWebServerRequest* request, const String& filename,
                size_t index, uint8_t* data, size_t len, bool final) {
+
+            // Design Ref: rcm-hub-v3.0 §4.4 — 첫 조각에서 인증 판정. 업로드 콜백이 응답 콜백보다 먼저 불리므로
+            // 여기서 막지 않으면 무인증으로 플래시가 써진다.
+            if (index == 0) {
+                _rejected = _authCheck && !_authCheck(request);
+                if (_rejected) Serial.println("OTA: upload rejected (auth required)");
+            }
+            if (_rejected) return;
 
             if (index == 0) {
                 Serial.printf("OTA: Starting update with %s\n", filename.c_str());
