@@ -92,9 +92,9 @@ status: completed
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| Plan | [ic-hub-v3.0.plan.md](../../01-plan/features/ic-hub-v3.0.plan.md) | ✅ |
-| Design | [ic-hub-v3.0.design.md](../../02-design/features/ic-hub-v3.0.design.md) | ✅ |
-| Check | [ic-hub-v3.0.analysis.md](../../03-analysis/ic-hub-v3.0.analysis.md) | ✅ (98%) |
+| Plan | [plan.md](plan.md) | ✅ |
+| Design | [design.md](design.md) | ✅ |
+| Check | [analysis.md](analysis.md) | ✅ (98%) |
 | Report | 현재 문서 | ✅ |
 
 ---

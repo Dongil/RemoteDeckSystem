@@ -8,8 +8,8 @@ project: RemoteDeckSystem
 component: IntegrateController (client)
 consumes: RemoteDeck_PC v3.0.0 /api/status hub_*
 branch: v3.0-ic-hub
-plan: docs/01-plan/features/ic-hub-v3.0.plan.md
-design: docs/02-design/features/ic-hub-v3.0.design.md
+plan: docs/archive/2026-11/RemoteDeck_PC_v3.0-IC/plan.md
+design: docs/archive/2026-11/RemoteDeck_PC_v3.0-IC/design.md
 phase: check
 matchRate: 98
 ---

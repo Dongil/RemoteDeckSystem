@@ -15,7 +15,7 @@ status: draft
 
 > **Summary**: 재부재 컬럼(ColAttendance)을 그대로 두고, 툴바 선택(재부재 / RCM 허브)에 따라 제목과 셀 값을 바꾼다. 설정은 devices.json에 저장한다.
 >
-> **Planning Doc**: [ic-hub-v3.0.plan.md](../../01-plan/features/ic-hub-v3.0.plan.md)
+> **Planning Doc**: [plan.md](plan.md)
 
 ---
 
