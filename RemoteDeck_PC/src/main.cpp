@@ -167,15 +167,19 @@ void onPCStateChange(bool pcOn) {
 
 // Design Ref: rcm-hub-v3.0 §5.3 — 허브 사용 시 전원 릴레이(1) latch 금지 (켜 두면 버튼을 계속 누르는 것 = 강제 종료)
 // RcmDeck의 허브 명령은 이 가드를 거치지 않는다(라이브러리가 자체적으로 latch를 막음). 기존 명령 입구에만 적용.
+// G-02 — 허브 동작 여부는 부팅 시 1회 확정. 설정 저장만 하고 재부팅 전이면 가드도 바뀌지 않는다
+// (허브 연결은 재부팅 후 반영되므로 가드도 같은 시점에 맞춤. Design §1.2)
+static bool hubActive = false;
+
 static bool blockPowerRelayLatch(uint8_t relay, bool on, const char* source) {
-    if (!config.hub.enabled || relay != 1 || !on) return false;
+    if (!hubActive || relay != 1 || !on) return false;
     logger.log("GUARD", (String("relay1 latch blocked (hub) from ") + source).c_str());
     return true;
 }
 
 void onScheduleAction(uint8_t relay, const std::string& action) {
     // Plan SC: FR-08 — 허브 사용 시 로컬 스케줄의 전원 동작은 서버가 담당
-    if (config.hub.enabled && relay == 1) {
+    if (hubActive && relay == 1) {
         logger.log("SCHEDULE", (String("Relay1 ") + action.c_str() + " skipped (RCM hub)").c_str());
         return;
     }
@@ -561,13 +565,16 @@ void setup() {
     // Design Ref: §5.3 — PIN_GPIO2는 SwitchMonitor.begin()에서 INPUT_PULLUP 설정
     pinMode(PIN_GPIO3, INPUT);
 
+    // G-02 — 공장 초기화 판정 뒤의 최종 설정으로 허브 동작 여부 확정 (이후 저장은 재부팅 후 반영)
+    hubActive = config.hub.enabled;
+
     // Network v2.1: single mode (ethernet OR wifi STA), non-blocking
     networkManager.setOnConnected([]() {
         Serial.println("=== Network connected - starting services ===");
 
         // MQTT — Plan SC: FR-10, 허브 사용 시 시작 안 함 (connect()가 loop를 막아 heartbeat 끊김)
         if (!config.mqtt.broker.empty()) {
-            if (!config.hub.enabled) {
+            if (!hubActive) {
                 mqttHandler.begin(config.mqtt, config.deviceId, networkManager.getNetClient());
             } else {
                 static bool mqttSkipLogged = false;
@@ -579,7 +586,7 @@ void setup() {
         ntpSync.begin(config.ntp.server.c_str(), config.ntp.timezone.c_str());
 
         // Design Ref: rcm-hub-v3.0 §5.2 — NTP 뒤에 허브 시작 (1회, 재접속은 라이브러리 담당)
-        if (config.hub.enabled && !hubBridge.started()) startHub();
+        if (hubActive && !hubBridge.started()) startHub();
 
         logger.log("NETWORK", networkManager.activeMode() == NetMode::ETHERNET ?
                    "Ethernet connected" : "WiFi connected");
@@ -706,6 +713,7 @@ void setup() {
     webServer.setLogGetter([]() { return logger.toJson(); });
     // Design Ref: v2.6.2 §5.2 — /api/attendance/history endpoint
     webServer.setAttendanceGetter([]() { return attendanceHandler.toJson(); });
+    webServer.setHubGetter([]() { return hubBridge.toJson(config.hub); });   // rcm-hub-v3.0 — 허브 카드 상세
     webServer.setAuthChanger([](const String& curPass, const String& newUser, const String& newPass) {
         if (curPass != String(config.auth.pass.c_str())) return false;
         config.auth.user = newUser.c_str();
@@ -838,6 +846,7 @@ void loop() {
     scheduleManager.loop();
     udpDiscovery.loop();
     webServer.ws().loop();
+    webServer.ota().loop();   // v3.0 — OTA 성공 응답 전송 후 재부팅
     hubBridge.loop();   // Design Ref: rcm-hub-v3.0 §5.2 — 비블로킹, 시작 전이면 no-op
 
     // Plan SC-6/7: GOT_IP + 5s stabilization 후 WebRequest 초기 sync 1회

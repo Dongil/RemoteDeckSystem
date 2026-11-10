@@ -279,6 +279,7 @@ POST /api/reboot          장치 재부팅
 POST /api/auth            계정 변경 (current_pass, new_user, new_pass 필요)
 POST /api/ota             펌웨어/SPIFFS 업로드 (multipart/form-data, v3.0부터 Basic Auth 필수)
 GET  /api/log             이벤트 로그 조회
+GET  /api/hub             RCM 허브 연결 정보 + 최근 송수신 내역 40건 (v3.0)
 ```
 
 #### curl 예시
@@ -545,6 +546,8 @@ http://내부서버.com/api/notify?device=node_1&event=relay1_on&value=1&ip=192.
 3. **[업로드]** 클릭
 4. 진행률 표시 → 완료 후 자동 재부팅
 
+> v3.0부터 업로드가 끝나면 `{"ok":true,"progress":100}` 응답을 먼저 보낸 뒤 약 1.5초 후 재부팅합니다(이전 버전은 응답 없이 재부팅되어 클라이언트가 timeout까지 대기). 스크립트 예: `curl -u admin:12345 -F "file=@RemoteDeck_PC_V3.0.0_OTA_20261110.bin" http://<ip>:5050/api/ota`
+
 ---
 
 ## 9. 하드웨어 사양
@@ -662,6 +665,20 @@ RemoteDeck_PC가 RCM 허브에 SmartDeck(`deck`)으로 접속해, 허브 명령�
 - `pc.powerOn`은 LED가 꺼져 있을 때만, `pc.forceOff`는 켜져 있을 때만 버튼을 누릅니다. 이미 원하는 상태면 누르지 않습니다.
 - LED가 바뀌면 즉시 허브에 보고합니다. 허브 연결이 끊기면 자동 재접속(0.5초 → 10초)합니다.
 - 키 오류(4001), 제품번호 중복(4009), 버전 불일치(4010)로 허브가 닫으면 재접속하지 않고 홈 카드에 사유를 표시합니다.
+
+**홈 「RCM 허브」 카드** (3초마다 갱신, `GET /api/hub`)
+
+| 항목 | 내용 |
+|------|------|
+| 상태 배지 | 연결됨(초록) / 연결 중(노랑) / 정지·설정 불완전(빨강) |
+| 허브 주소, 제품번호 / 방 | 접속 URL, 허브가 알려 준 방 |
+| 연결 유지, 세션, Heartbeat | 이번 연결 시간, 허브 세션 ID, 허브 heartbeat 주기 |
+| 접속 / 끊김 | 부팅 후 접속 승인(welcome) 횟수 / 소켓 끊김 횟수 |
+| 수신 / 송신 | 프레임 수 (실패 응답 수) |
+| 마지막 수신, 최근 명령 | 마지막 프레임 수신 시점, 마지막으로 처리한 허브 명령과 결과(✓/✗) |
+| 송수신 내역 | 최근 40건(최신이 위). ↓ 수신(허브→장비), ↑ 송신(장비→허브), ⚡/✕ 소켓 연결/끊김. 「명령만」으로 명령·응답만 보기 |
+
+`GET /api/hub` 응답: `enabled, connected, stopped, stop_reason, url, product_id, session, room, heartbeat_ms, connected_for_s, welcomes, drops, rx, tx, reqs, res_fail, last_rx_s, last_tx_s, last_cmd, last_cmd_ok, last_cmd_s, log[]` (`log[]` 항목: `t`(epoch, NTP 전 0), `ago`(초), `dir`(i/o/c/d), `type`, `op`, `id`, `ok`(응답만), `detail`). 장비 키·서명은 기록하지 않습니다. 내역은 RAM에만 있어 재부팅하면 지워집니다.
 
 ### 12.3 운영 원칙 (허브 사용 시)
 

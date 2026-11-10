@@ -116,6 +116,13 @@ void WebServer::setupAPI() {
         else req->send(200, "application/json", "{\"enabled\":false,\"history\":[]}");
     });
 
+    // rcm-hub-v3.0 — GET /api/hub (허브 연결 정보 + 최근 송수신 내역)
+    _server->on("/api/hub", HTTP_GET, [this](AsyncWebServerRequest* req) {
+        if (!requireAuth(req)) return;
+        if (_getHub) req->send(200, "application/json", _getHub());
+        else req->send(200, "application/json", "{\"enabled\":false,\"log\":[]}");
+    });
+
     // POST /api/config (auth required)
     _server->on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {},
         NULL,

@@ -52,6 +52,12 @@ class RcmHub {
 
   void on(const char* op, ReqHandler h) { _handlers[op] = h; }
 
+  // Optional observer for diagnostics (e.g. a traffic log on the device web UI). Never changes behaviour.
+  // kind: 'i' frame received, 'o' frame sent, 'c' socket connected, 'd' socket disconnected (text empty).
+  // Called on the loop() task; keep it short and do not send from inside it.
+  using Tap = std::function<void(char kind, const char* text, size_t len)>;
+  void setTap(Tap t) { _tap = t; }
+
   // Answers. result may be nullptr for {}.
   void ok(const String& id, JsonObjectConst result);
   void ok(const String& id);
@@ -75,6 +81,7 @@ class RcmHub {
   RcmHubConfig _cfg;
   StateFn _fullState;
   std::map<String, ReqHandler> _handlers;
+  Tap _tap;
   bool _ready = false;
   bool _stopped = false;
   String _stopReason;

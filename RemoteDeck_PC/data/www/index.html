@@ -26,10 +26,28 @@
   <div class="card hub-card" id="hub-card" style="display:none">
     <div class="hub-header">
       <h2>🔗 RCM 허브</h2>
-      <span class="hub-badge wait" id="hub-badge">● 연결 중</span>
+      <span class="hub-badge wait" id="hub-badge"><i class="hub-pulse"></i><b id="hub-badge-text">연결 중</b></span>
     </div>
-    <div class="hub-info">허브 <span id="hub-addr">--</span> · 제품번호 <span id="hub-pid">--</span></div>
     <div class="hub-reason" id="hub-reason" style="display:none"></div>
+    <div class="hub-grid">
+      <div class="hub-kv wide"><label>허브 주소</label><span id="hub-addr" class="mono">--</span></div>
+      <div class="hub-kv"><label>제품번호 / 방</label><span id="hub-pid">--</span></div>
+      <div class="hub-kv"><label>연결 유지</label><span id="hub-uptime">--</span></div>
+      <div class="hub-kv"><label>세션</label><span id="hub-session" class="mono">--</span></div>
+      <div class="hub-kv"><label>Heartbeat</label><span id="hub-hb">--</span></div>
+      <div class="hub-kv"><label>접속 / 끊김</label><span id="hub-conn">--</span></div>
+      <div class="hub-kv"><label>수신 / 송신</label><span id="hub-rxtx">--</span></div>
+      <div class="hub-kv"><label>마지막 수신</label><span id="hub-lastrx">--</span></div>
+      <div class="hub-kv"><label>최근 명령</label><span id="hub-lastcmd">--</span></div>
+    </div>
+    <div class="hub-log-head">
+      <h3>송수신 내역</h3>
+      <div class="hub-log-tools">
+        <label><input type="checkbox" id="hub-only-cmd" onchange="renderHubLog()"> 명령만</label>
+        <button class="hub-mini" id="hub-more" onclick="toggleHubMore()">더 보기</button>
+      </div>
+    </div>
+    <div class="hub-log" id="hub-log"><p class="hub-empty">아직 기록이 없습니다</p></div>
   </div>
 
   <!-- v2.6.2: 재부재 시스템 카드 (attendance.enabled 시 표시) -->

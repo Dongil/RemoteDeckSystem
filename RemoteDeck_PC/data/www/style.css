@@ -93,13 +93,51 @@ input[type="checkbox"]{accent-color:#0ff}
 .led-dot.on{background:#4ac86e;box-shadow:0 0 6px #4ac86e88}
 .led-dot.off{background:#f04a4a;box-shadow:0 0 6px #f04a4a88}
 /* rcm-hub-v3.0 §6.4: RCM 허브 카드 */
-.hub-card{margin-bottom:12px;padding:16px}
-.hub-card .hub-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.hub-card .hub-header h2{border-bottom:none;padding-bottom:0}
-.hub-badge{font-size:13px;font-weight:bold;padding:3px 10px;border-radius:10px;background:#0f3460}
-.hub-badge.ok{color:#4ac86e}
-.hub-badge.wait{color:#e0c040}
-.hub-badge.fail{color:#f04a4a}
-.hub-card .hub-info{font-size:13px;color:#aaa}
-.hub-card .hub-info span{color:#e0e0e0}
-.hub-card .hub-reason{margin-top:8px;font-size:13px;color:#f04a4a}
+.hub-card{margin-bottom:12px;padding:16px;border-left:3px solid #e0c040;transition:border-color .3s}
+.hub-card.ok{border-left-color:#4ac86e}
+.hub-card.fail{border-left-color:#f04a4a}
+.hub-card .hub-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.hub-card .hub-header h2{border-bottom:none;padding-bottom:0;margin-bottom:0}
+.hub-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 12px;border-radius:12px;background:#0f3460}
+.hub-badge.ok{color:#4ac86e;background:#4ac86e1f}
+.hub-badge.wait{color:#e0c040;background:#e0c0401f}
+.hub-badge.fail{color:#f04a4a;background:#f04a4a1f}
+.hub-pulse{width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block}
+.hub-badge.ok .hub-pulse{animation:hubPulse 1.6s ease-out infinite}
+.hub-badge.wait .hub-pulse{animation:hubBlink 1s steps(2) infinite}
+@keyframes hubPulse{0%{box-shadow:0 0 0 0 #4ac86e99}100%{box-shadow:0 0 0 7px #4ac86e00}}
+@keyframes hubBlink{50%{opacity:.25}}
+.hub-card .hub-reason{margin:0 0 12px;padding:8px 10px;font-size:13px;color:#f04a4a;background:#f04a4a14;border-radius:6px}
+.hub-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+@media(max-width:600px){.hub-grid{grid-template-columns:repeat(2,1fr)}}
+.hub-kv{background:#0d1b3e;border-radius:6px;padding:8px 10px;min-width:0}
+.hub-kv.wide{grid-column:1/-1}
+.hub-kv label{display:block;font-size:11px;color:#778;margin-bottom:3px}
+.hub-kv>span{display:block;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hub-log::-webkit-scrollbar{width:6px}
+.hub-log::-webkit-scrollbar-thumb{background:#2a3a6a;border-radius:3px}
+.hub-log::-webkit-scrollbar-track{background:transparent}
+.hub-log{scrollbar-width:thin;scrollbar-color:#2a3a6a transparent}
+.mono{font-family:ui-monospace,Consolas,monospace}
+.hub-ok{color:#4ac86e}.hub-ng{color:#f04a4a}.hub-dim{color:#778}
+.hub-log-head{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #2a2f4a;padding-top:10px;margin-bottom:6px}
+.hub-log-head h3{margin:0}
+.hub-log-tools{display:flex;align-items:center;gap:10px;font-size:12px;color:#aaa}
+.hub-log-tools label{display:flex;align-items:center;gap:4px;cursor:pointer}
+.hub-mini{padding:3px 10px;font-size:12px}
+.hub-log{max-height:340px;overflow-y:auto;border-radius:6px;background:#0d1b3e}
+.hub-row{display:grid;grid-template-columns:62px 22px minmax(90px,150px) 1fr 22px;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid #16213e;font-size:12px}
+.hub-row:last-child{border-bottom:none}
+.hub-row .t{color:#778;font-family:ui-monospace,Consolas,monospace}
+.hub-row .d{text-align:center;font-weight:bold;border-radius:4px;line-height:18px}
+.hub-row .d.i{color:#4aa8ff;background:#4aa8ff1f}
+.hub-row .d.o{color:#c08aff;background:#c08aff1f}
+.hub-row .d.c,.hub-row .d.x{color:#e0c040;background:#e0c0401f}
+.hub-row .op{color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hub-row .op small{color:#778;margin-left:4px}
+.hub-row .det{color:#9aa;font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hub-row .r{text-align:center}
+.hub-row.cmd{background:#0f3460}
+.hub-row.err .det{color:#f04a4a}
+.hub-empty{color:#666;font-style:italic;padding:10px}
+@media(max-width:600px){.hub-row{grid-template-columns:54px 20px 1fr 20px}.hub-row .r{grid-row:1;grid-column:4}.hub-row .det{grid-column:2/-1}}

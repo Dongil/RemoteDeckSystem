@@ -55,15 +55,18 @@ void RcmHub::onWs(WStype_t type, uint8_t* payload, size_t len) {
   switch (type) {
     case WStype_CONNECTED:
       Serial.printf("[rcm] connected %s:%u%s\n", _cfg.host.c_str(), _cfg.port, _cfg.path.c_str());
+      if (_tap) _tap('c', "", 0);
       break;
     case WStype_DISCONNECTED:
       if (_ready) Serial.println("[rcm] disconnected");
+      if (_tap) _tap('d', "", 0);
       _ready = false;
       // exponential backoff 0.5 s .. 10 s
       _backoffMs = _backoffMs >= 5000 ? 10000 : _backoffMs * 2;
       _ws.setReconnectInterval(_backoffMs);
       break;
     case WStype_TEXT:
+      if (_tap) _tap('i', (const char*)payload, len);
       onText((const char*)payload, len);
       break;
     default:
@@ -143,6 +146,7 @@ void RcmHub::onText(const char* text, size_t len) {
 void RcmHub::sendDoc(JsonDocument& doc) {
   String s;
   serializeJson(doc, s);
+  if (_tap) _tap('o', s.c_str(), s.length());
   _ws.sendTXT(s);
 }
 
