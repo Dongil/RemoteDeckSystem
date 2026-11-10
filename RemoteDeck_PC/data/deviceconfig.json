@@ -53,8 +53,8 @@
     "timezone": "KST-9"
   },
   "firmware": {
-    "version": "2.3.0",
-    "date": "2026-06-10"
+    "version": "3.0.0",
+    "date": "2026-11-09"
   },
   "web_request": {
     "enabled": false,
@@ -71,5 +71,14 @@
     "gpio2_low": "",
     "gpio3_high": "",
     "gpio3_low": ""
+  },
+  "hub": {
+    "enabled": false,
+    "host": "",
+    "port": 8891,
+    "path": "/v1/ws",
+    "tls": false,
+    "product_id": "",
+    "device_key": ""
   }
 }

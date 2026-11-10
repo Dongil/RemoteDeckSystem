@@ -57,10 +57,30 @@ void OTAHandler::restoreSpiffsConfigs() {
     }
 }
 
+void OTAHandler::loop() {
+    if (!_rebootPending || (int32_t)(millis() - _rebootAt) < 0) return;
+    _rebootPending = false;
+    // v2.5.1 — SPIFFS 갱신이었으면 재마운트 후 백업해 둔 설정 파일 복원
+    if (_restorePending) {
+        _restorePending = false;
+        restoreSpiffsConfigs();
+    }
+    Serial.println("OTA: rebooting...");
+    Serial.flush();
+    ESP.restart();
+}
+
 void OTAHandler::setup(AsyncWebServer* server, const char* path) {
     server->on(path, HTTP_POST,
         // Response handler (called after upload completes)
         [this](AsyncWebServerRequest* request) {
+            // Design Ref: rcm-hub-v3.0 §4.4 — 인증 실패 업로드는 Update를 시작하지 않았으므로 성공으로 보면 안 됨
+            if (_rejected || (_authCheck && !_authCheck(request))) {
+                _rejected = false;
+                _pendingCmd = U_FLASH;
+                request->requestAuthentication("RemoteDeck");
+                return;
+            }
             bool success = !Update.hasError();
             AsyncWebServerResponse* response = request->beginResponse(200, "application/json",
                 success ? "{\"ok\":true,\"progress\":100}" : "{\"ok\":false,\"error\":\"Update failed\"}");
@@ -68,19 +88,26 @@ void OTAHandler::setup(AsyncWebServer* server, const char* path) {
             request->send(response);
 
             if (success) {
-                // v2.5.1 — SPIFFS 갱신이었으면 재마운트 후 백업해 둔 설정 파일 복원
-                if (_pendingCmd == U_SPIFFS) {
-                    restoreSpiffsConfigs();
-                }
-                Serial.println("OTA: Update successful, rebooting...");
-                delay(1000);
-                ESP.restart();
+                // v3.0 — 여기서 restart하면 응답이 나가지 않는다. 콜백이 끝나야 응답이 전송되므로
+                // 복원·재부팅은 loop()로 넘긴다. (v2.5.1 SPIFFS 설정 복원도 loop()에서 수행)
+                _restorePending = (_pendingCmd == U_SPIFFS);
+                _rebootAt = millis() + 1500;
+                _rebootPending = true;
+                Serial.println("OTA: Update successful, reboot scheduled");
             }
             _pendingCmd = U_FLASH;
         },
         // Upload handler (called for each chunk)
         [this](AsyncWebServerRequest* request, const String& filename,
                size_t index, uint8_t* data, size_t len, bool final) {
+
+            // Design Ref: rcm-hub-v3.0 §4.4 — 첫 조각에서 인증 판정. 업로드 콜백이 응답 콜백보다 먼저 불리므로
+            // 여기서 막지 않으면 무인증으로 플래시가 써진다.
+            if (index == 0) {
+                _rejected = _authCheck && !_authCheck(request);
+                if (_rejected) Serial.println("OTA: upload rejected (auth required)");
+            }
+            if (_rejected) return;
 
             if (index == 0) {
                 Serial.printf("OTA: Starting update with %s\n", filename.c_str());

@@ -86,7 +86,129 @@ function updateDashboard(d) {
       card.style.display = 'none';
     }
   }
+
+  // rcm-hub-v3.0 §6.4: RCM 허브 카드 (hub_enabled 시 표시)
+  updateHubCard(d);
 }
+
+// rcm-hub-v3.0 §6.4: 정지 사유 한글 매핑 (stop_reason = "<code> <reason>")
+const HUB_STOP_TEXT = {
+  '4001': '장비 키 또는 제품번호 오류',
+  '4009': '같은 제품번호 장비가 이미 접속 중',
+  '4010': '버전 불일치'
+};
+function updateHubCard(d) {
+  const card = document.getElementById('hub-card');
+  if (!card || d.hub_enabled === undefined) return;
+  if (!d.hub_enabled) { card.style.display = 'none'; return; }
+  const wasHidden = card.style.display === 'none';
+  card.style.display = '';
+  if (wasHidden) setTimeout(loadHubDetail, 0);
+  const badge = document.getElementById('hub-badge');
+  const reasonEl = document.getElementById('hub-reason');
+  const reason = d.hub_stop_reason || '';
+  let reasonText = '', state = 'wait', label = '연결 중';
+  if (d.hub_connected) {
+    state = 'ok'; label = '연결됨';
+  } else if (d.hub_stopped) {
+    state = 'fail'; label = '정지';
+    const code = reason.split(' ')[0];
+    reasonText = (HUB_STOP_TEXT[code] ? HUB_STOP_TEXT[code] + ' (' + code + ')' : reason) + ' — 설정 확인 후 재부팅하세요';
+  } else if (reason === 'config incomplete') {
+    state = 'fail'; label = '설정 불완전';
+    reasonText = '허브 주소·제품번호·장비 키를 입력한 뒤 재부팅하세요 (설정 > 기타)';
+  }
+  badge.className = 'hub-badge ' + state;
+  document.getElementById('hub-badge-text').textContent = label;
+  card.className = 'card hub-card ' + state;
+  reasonEl.textContent = reasonText;
+  reasonEl.style.display = reasonText ? '' : 'none';
+}
+
+// rcm-hub-v3.0: 허브 카드 상세 (GET /api/hub, 3초 폴링 — 홈 탭에서 카드가 보일 때만)
+const HUB_OP_TEXT = {
+  'pc.powerOn': 'PC 켜기', 'pc.forceOff': 'PC 강제 끄기',
+  'deck.relay.set': '릴레이 설정', 'deck.relay.pulse': '릴레이 펄스', 'deck.reboot': '재부팅',
+  'state.get': '상태 조회', 'deck.state': '상태 보고', 'hub.closing': '허브 종료 알림'
+};
+const HUB_TYPE_TEXT = { challenge: '인증 요청', hello: '인증 응답', welcome: '접속 승인', socket: '연결' };
+const HUB_CMD_OPS = ['pc.powerOn', 'pc.forceOff', 'deck.relay.set', 'deck.relay.pulse', 'deck.reboot'];
+let hubDetail = null, hubShowAll = false;
+
+function fmtDur(s) {
+  if (s == null || s < 0) return '--';
+  if (s < 60) return s + '초';
+  if (s < 3600) return Math.floor(s / 60) + '분 ' + (s % 60) + '초';
+  if (s < 86400) return Math.floor(s / 3600) + '시간 ' + Math.floor(s % 3600 / 60) + '분';
+  return Math.floor(s / 86400) + '일 ' + Math.floor(s % 86400 / 3600) + '시간';
+}
+function fmtAgo(s) { return s == null || s < 0 ? '--' : (s < 2 ? '방금' : fmtDur(s) + ' 전'); }
+function escHtml(t) { return String(t).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c])); }
+function hubTime(e) {
+  if (e.t) return new Date(e.t * 1000).toTimeString().slice(0, 8);
+  return '-' + fmtDur(e.ago);
+}
+
+function loadHubDetail() {
+  const card = document.getElementById('hub-card');
+  if (!card || card.style.display === 'none') return;
+  if (!document.getElementById('home').classList.contains('active')) return;
+  fetch('/api/hub').then(r => r.json()).then(h => {
+    hubDetail = h;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
+    set('hub-addr', escHtml(h.url || '--'));
+    set('hub-pid', escHtml(h.product_id || '--') + (h.room && h.room !== h.product_id ? ' / ' + escHtml(h.room) : ''));
+    set('hub-uptime', h.connected ? fmtDur(h.connected_for_s) : '<span class="hub-dim">연결 안 됨</span>');
+    set('hub-session', h.session ? escHtml(h.session) : '--');
+    set('hub-hb', h.heartbeat_ms ? (h.heartbeat_ms / 1000) + '초' : '--');
+    set('hub-conn', h.welcomes + '회 / ' + h.drops + '회');
+    set('hub-rxtx', h.rx + ' / ' + h.tx + (h.res_fail ? ' <span class="hub-ng">(실패 응답 ' + h.res_fail + ')</span>' : ''));
+    set('hub-lastrx', fmtAgo(h.last_rx_s));
+    if (h.last_cmd) {
+      const ok = h.last_cmd_ok === 1;
+      set('hub-lastcmd', '<span class="' + (ok ? 'hub-ok' : 'hub-ng') + '">' + (ok ? '✓ ' : '✗ ') + '</span>' +
+        escHtml(HUB_OP_TEXT[h.last_cmd] || h.last_cmd) + ' <span class="hub-dim">' + fmtAgo(h.last_cmd_s) + '</span>');
+    } else set('hub-lastcmd', '<span class="hub-dim">없음</span>');
+    renderHubLog();
+  }).catch(() => {});
+}
+
+function renderHubLog() {
+  const box = document.getElementById('hub-log');
+  if (!box || !hubDetail) return;
+  const onlyCmd = document.getElementById('hub-only-cmd').checked;
+  let rows = hubDetail.log || [];
+  if (onlyCmd) rows = rows.filter(e => (e.type === 'req' || e.type === 'res') && e.op !== 'state.get');
+  const total = rows.length;
+  if (!hubShowAll) rows = rows.slice(0, 12);
+  const more = document.getElementById('hub-more');
+  more.style.display = total > 12 ? '' : 'none';
+  more.textContent = hubShowAll ? '접기' : '더 보기 (' + total + ')';
+  if (!rows.length) {
+    box.innerHTML = '<p class="hub-empty">' + (onlyCmd ? '받은 명령이 없습니다' : '아직 기록이 없습니다') + '</p>';
+    return;
+  }
+  const DIR = {
+    i: ['i', '↓', '수신 (허브 → 장비)'], o: ['o', '↑', '송신 (장비 → 허브)'],
+    c: ['c', '⚡', '소켓 연결'], d: ['x', '✕', '소켓 끊김']
+  };
+  box.innerHTML = rows.map(e => {
+    const [dirCls, dirTxt, dirTitle] = DIR[e.dir] || DIR.c;
+    const name = e.op ? (HUB_OP_TEXT[e.op] || e.op) : (HUB_TYPE_TEXT[e.type] || e.type);
+    const sub = e.type === 'req' ? '명령' : e.type === 'res' ? '응답' : '';
+    const isCmd = e.type === 'req' && HUB_CMD_OPS.includes(e.op);
+    const res = e.ok === true ? '<span class="hub-ok">✓</span>' : e.ok === false ? '<span class="hub-ng">✗</span>' : '';
+    return '<div class="hub-row' + (isCmd ? ' cmd' : '') + (e.ok === false || e.dir === 'd' ? ' err' : '') + '">' +
+      '<span class="t">' + hubTime(e) + '</span>' +
+      '<span class="d ' + dirCls + '" title="' + dirTitle + '">' + dirTxt + '</span>' +
+      '<span class="op" title="' + escHtml(e.op || e.type) + (e.id ? ' #' + escHtml(e.id) : '') + '">' +
+        escHtml(name) + (sub ? '<small>' + sub + '</small>' : '') + '</span>' +
+      '<span class="det" title="' + escHtml(e.detail || '') + '">' + escHtml(e.detail || '') + '</span>' +
+      '<span class="r">' + res + '</span></div>';
+  }).join('');
+}
+function toggleHubMore() { hubShowAll = !hubShowAll; renderHubLog(); }
+setInterval(loadHubDetail, 3000);
 
 // v2.6.2: attendance 전송 이력 (5s 폴링)
 // fix-2/4: O/X 아이콘, 시분초 시각 (device NTP time 사용)
@@ -129,6 +251,7 @@ function loadAttendanceHistory() {
 }
 setInterval(loadAttendanceHistory, 5000);
 document.querySelector('[data-tab="home"]').addEventListener('click', loadAttendanceHistory);
+document.querySelector('[data-tab="home"]').addEventListener('click', () => setTimeout(loadHubDetail, 0));
 
 // Initial load
 fetch('/api/status').then(r => r.json()).then(d => {
@@ -142,7 +265,11 @@ function relay(num, action) {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({relay: num, action: action, duration: 500})
-  });
+  }).then(r => {
+    // rcm-hub-v3.0 G-01: 허브 사용 중 릴레이1 켜기(latch)는 409로 거부됨
+    if (r.status === 409) alert('RCM 허브 연동 중에는 릴레이1(PC 전원)을 켜 둘 수 없습니다. 펄스를 사용하거나 허브에서 전원을 제어하세요.');
+    else if (!r.ok) alert('릴레이 제어 실패 (HTTP ' + r.status + ')');
+  }).catch(() => {});
 }
 
 // WOL
@@ -299,6 +426,17 @@ function loadConfig() {
     document.getElementById('cfg-att-source').value = d.attendance?.source || 'pcled';
     document.getElementById('cfg-att-on').value = d.web_request?.attendance_on || '';
     document.getElementById('cfg-att-off').value = d.web_request?.attendance_off || '';
+
+    // rcm-hub-v3.0 RCM-API 연동 (device_key는 가려서 옴: "****" = 저장됨)
+    document.getElementById('cfg-hub-enabled').checked = d.hub?.enabled || false;
+    document.getElementById('cfg-hub-host').value = d.hub?.host || '';
+    document.getElementById('cfg-hub-port').value = d.hub?.port || 8891;
+    document.getElementById('cfg-hub-path').value = d.hub?.path || '/v1/ws';
+    document.getElementById('cfg-hub-tls').checked = d.hub?.tls || false;
+    document.getElementById('cfg-hub-pid').value = d.hub?.product_id || '';
+    const keyEl = document.getElementById('cfg-hub-key');
+    keyEl.value = '';
+    keyEl.placeholder = d.hub?.device_key ? '저장됨 (변경 시에만 입력)' : '장비 키 입력';
   });
 }
 
@@ -350,24 +488,26 @@ function saveNetwork() {
   });
 }
 
+// Resolve hostname to IP for ESP32 Ethernet compatibility (MQTT broker, RCM hub host 공용)
+async function resolveHostToIp(host) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return host;
+  try {
+    const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(host) + '&type=A');
+    const dnsData = await dnsResp.json();
+    const aRecord = dnsData.Answer?.find(a => a.type === 1);
+    if (aRecord && confirm(host + ' → ' + aRecord.data + '\nIP로 변환하여 저장하시겠습니까?\n(ESP32 Ethernet DNS 제한)')) {
+      return aRecord.data;
+    }
+  } catch(e) { /* DNS failed, save hostname as-is */ }
+  return host;
+}
+
 // ─── Save: MQTT (no reboot) ───
 async function saveMQTT() {
   const enabled = document.getElementById('cfg-mqtt-enable').checked;
   let broker = document.getElementById('cfg-mqtt-broker').value;
   // Resolve hostname to IP for ESP32 Ethernet compatibility
-  if (enabled && broker && !/^\d{1,3}(\.\d{1,3}){3}$/.test(broker)) {
-    try {
-      const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(broker) + '&type=A');
-      const dnsData = await dnsResp.json();
-      const aRecord = dnsData.Answer?.find(a => a.type === 1);
-      if (aRecord) {
-        const resolvedIP = aRecord.data;
-        if (confirm(broker + ' → ' + resolvedIP + '\nIP로 변환하여 저장하시겠습니까?\n(ESP32 Ethernet DNS 제한)')) {
-          broker = resolvedIP;
-        }
-      }
-    } catch(e) { /* DNS failed, save hostname as-is */ }
-  }
+  if (enabled && broker) broker = await resolveHostToIp(broker);
   const cfg = {
     mqtt: {
       broker: enabled ? broker : '',
@@ -465,7 +605,12 @@ async function testMQTT() {
 }
 
 // ─── Save: Etc (no reboot) ───
-function saveEtc() {
+async function saveEtc() {
+  // rcm-hub-v3.0 §6.3: 허브 주소 hostname → IP 변환 (ESP32 Ethernet DNS 제한, saveMQTT와 같은 방식)
+  const hubEnabled = document.getElementById('cfg-hub-enabled').checked;
+  let hubHost = document.getElementById('cfg-hub-host').value.trim();
+  if (hubEnabled && hubHost) hubHost = await resolveHostToIp(hubHost);
+  const hubKey = document.getElementById('cfg-hub-key').value.trim();
   const cfg = {
     relay: {
       pulse_short_ms: parseInt(document.getElementById('cfg-relay-short').value) || 500,
@@ -490,6 +635,16 @@ function saveEtc() {
     web_request: {
       attendance_on: document.getElementById('cfg-att-on').value,
       attendance_off: document.getElementById('cfg-att-off').value
+    },
+    // rcm-hub-v3.0 RCM-API 연동 (키를 비워 두면 "****" = 기존 키 유지)
+    hub: {
+      enabled: hubEnabled,
+      host: hubHost,
+      port: parseInt(document.getElementById('cfg-hub-port').value) || 8891,
+      path: document.getElementById('cfg-hub-path').value.trim() || '/v1/ws',
+      tls: document.getElementById('cfg-hub-tls').checked,
+      product_id: document.getElementById('cfg-hub-pid').value.trim(),
+      device_key: hubKey || '****'
     }
   };
   fetch('/api/config', {
@@ -576,6 +731,41 @@ function changeAccount() {
   });
 }
 
+// rcm-hub-v3.0 G-03: 서버 응답(200 ok / 401 / 실패)으로 결과 판정.
+// v3.0부터 서버는 응답 후 재부팅한다. 응답이 오지 않으면(v2.x 장비) 업로드 완료 20초 뒤 성공으로 보고 재로드.
+function sendOTA(formData, barId, pctId, okMsg) {
+  const xhr = new XMLHttpRequest();
+  let settled = false, fallback = null;
+  const done = (msg, reload) => {
+    if (settled) return;
+    settled = true;
+    if (fallback) clearTimeout(fallback);
+    alert(msg);
+    if (reload) setTimeout(() => location.reload(), 10000);
+  };
+  xhr.open('POST', '/api/ota');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      document.getElementById(barId).style.width = pct + '%';
+      document.getElementById(pctId).textContent = pct + '%';
+    }
+  };
+  xhr.upload.onload = () => {
+    fallback = setTimeout(() => done(okMsg, true), 20000);
+  };
+  xhr.onload = () => {
+    if (xhr.status === 401) return done('인증 실패: 다시 로그인한 뒤 업로드하세요.', false);
+    let ok = false;
+    try { ok = xhr.status === 200 && JSON.parse(xhr.responseText).ok === true; } catch (e) {}
+    if (ok) done(okMsg, true);
+    else done('업로드 실패 (HTTP ' + xhr.status + '): 파일을 확인하세요. 장치는 재부팅하지 않습니다.', false);
+  };
+  // 응답 전에 연결이 끊기면(구버전 장비의 즉시 재부팅) 업로드가 끝난 경우에만 성공으로 본다
+  xhr.onerror = () => { if (fallback) done(okMsg, true); else done('업로드 중 연결이 끊겼습니다.', false); };
+  xhr.send(formData);
+}
+
 // OTA Upload
 function uploadOTA() {
   const file = document.getElementById('ota-file').files[0];
@@ -584,23 +774,7 @@ function uploadOTA() {
 
   const formData = new FormData();
   formData.append('firmware', file);
-
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/ota');
-  xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) {
-      const pct = Math.round(e.loaded / e.total * 100);
-      document.getElementById('ota-progress').style.width = pct + '%';
-      document.getElementById('ota-pct').textContent = pct + '%';
-    }
-  };
-  // v2.5.2: upload body 전송 완료 시점에 reload 예약. 서버가 응답 flush 전에 재부팅해도
-  // (xhr.onload가 안 뜨더라도) 브라우저는 반드시 재로드된다.
-  xhr.upload.onload = () => {
-    alert('업로드 완료! 장치가 재부팅됩니다...');
-    setTimeout(() => location.reload(), 10000);
-  };
-  xhr.send(formData);
+  sendOTA(formData, 'ota-progress', 'ota-pct', '업로드 완료! 장치가 재부팅됩니다...');
 }
 
 // RemoteDeck_PC_v2.5 — SPIFFS(웹 UI) 업로드. 확장자에 .spiffs.bin 이나 .fs.bin 이 포함되어야
@@ -618,22 +792,7 @@ function uploadFS() {
 
   const formData = new FormData();
   formData.append('spiffs', file);   // 필드명은 서버에서 무시. 파일명이 판정 기준.
-
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/api/ota');
-  xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) {
-      const pct = Math.round(e.loaded / e.total * 100);
-      document.getElementById('fs-progress').style.width = pct + '%';
-      document.getElementById('fs-pct').textContent = pct + '%';
-    }
-  };
-  // v2.5.2: uploadOTA와 동일 이유로 upload.onload로 이관 (응답 유실 대비)
-  xhr.upload.onload = () => {
-    alert('웹 UI 업로드 완료! 장치가 재부팅됩니다...');
-    setTimeout(() => location.reload(), 10000);
-  };
-  xhr.send(formData);
+  sendOTA(formData, 'fs-progress', 'fs-pct', '웹 UI 업로드 완료! 장치가 재부팅됩니다...');
 }
 
 // Logs

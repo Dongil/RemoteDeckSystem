@@ -20,6 +20,7 @@
 #include "network/UDPDiscovery.h"
 #include "network/NTPSync.h"
 #include "network/WebRequestHandler.h"
+#include "network/HubBridge.h"
 
 #include "web/WebServer.h"
 
@@ -54,6 +55,7 @@ WebServer webServer;
 RS485Handler rs485Handler;
 WebRequestHandler webRequestHandler;
 Logger logger;
+HubBridge hubBridge;   // Design Ref: rcm-hub-v3.0 §5.2
 
 // ─── STATUS2 network activity blink ─────────────────
 unsigned long status2OffTime = 0;
@@ -163,7 +165,24 @@ void onPCStateChange(bool pcOn) {
     attendanceHandler.onSourceStateChange("pcled", pcOn);
 }
 
+// Design Ref: rcm-hub-v3.0 §5.3 — 허브 사용 시 전원 릴레이(1) latch 금지 (켜 두면 버튼을 계속 누르는 것 = 강제 종료)
+// RcmDeck의 허브 명령은 이 가드를 거치지 않는다(라이브러리가 자체적으로 latch를 막음). 기존 명령 입구에만 적용.
+// G-02 — 허브 동작 여부는 부팅 시 1회 확정. 설정 저장만 하고 재부팅 전이면 가드도 바뀌지 않는다
+// (허브 연결은 재부팅 후 반영되므로 가드도 같은 시점에 맞춤. Design §1.2)
+static bool hubActive = false;
+
+static bool blockPowerRelayLatch(uint8_t relay, bool on, const char* source) {
+    if (!hubActive || relay != 1 || !on) return false;
+    logger.log("GUARD", (String("relay1 latch blocked (hub) from ") + source).c_str());
+    return true;
+}
+
 void onScheduleAction(uint8_t relay, const std::string& action) {
+    // Plan SC: FR-08 — 허브 사용 시 로컬 스케줄의 전원 동작은 서버가 담당
+    if (hubActive && relay == 1) {
+        logger.log("SCHEDULE", (String("Relay1 ") + action.c_str() + " skipped (RCM hub)").c_str());
+        return;
+    }
     logger.log("SCHEDULE", (String("Relay") + relay + " " + action.c_str()).c_str());
     if (action == "on") {
         relayController.pulse(relay, config.relay.pulseShortMs);
@@ -258,6 +277,21 @@ bool onUDPConfig(const char* jsonConfig) {
         if (att.containsKey("source"))  config.attendance.source  = att["source"].as<std::string>();
     }
 
+    // Design Ref: rcm-hub-v3.0 §3.3 #3 — hub 블록 (없으면 기존 값 유지, "****"는 키 유지)
+    if (doc.containsKey("hub")) {
+        JsonObject hub = doc["hub"];
+        if (hub.containsKey("enabled"))    config.hub.enabled   = hub["enabled"];
+        if (hub.containsKey("host"))       config.hub.host      = hub["host"].as<std::string>();
+        if (hub.containsKey("port"))       config.hub.port      = hub["port"] | config.hub.port;
+        if (hub.containsKey("path"))       config.hub.path      = hub["path"].as<std::string>();
+        if (hub.containsKey("tls"))        config.hub.tls       = hub["tls"];
+        if (hub.containsKey("product_id")) config.hub.productId = hub["product_id"].as<std::string>();
+        if (hub.containsKey("device_key")) {
+            std::string key = hub["device_key"].as<std::string>();
+            if (key != "****") config.hub.deviceKey = key;
+        }
+    }
+
     return ConfigManager::save(config);
 }
 
@@ -282,7 +316,9 @@ void processCommand(const char* json, const char* source) {
     if (strcmp(cmd, "relay") == 0) {
         uint8_t relay = doc["relay"] | 1;
         const char* state = doc["state"] | "on";
-        relayController.setRelay(relay, strcmp(state, "on") == 0);
+        bool on = strcmp(state, "on") == 0;
+        if (blockPowerRelayLatch(relay, on, source)) return;   // Plan SC: FR-09
+        relayController.setRelay(relay, on);
 
     } else if (strcmp(cmd, "pulse") == 0) {
         uint8_t relay = doc["relay"] | 1;
@@ -308,7 +344,7 @@ void processCommand(const char* json, const char* source) {
 // ─── WebSocket status (internal, unchanged) ─────────
 
 String buildStatusJson() {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<768> doc;   // rcm-hub-v3.0 §4.1: 512 → 768 (hub_* 필드)
     doc["pc_on"] = pcMonitor.isPCOn();
     doc["relay1"] = relayController.getRelay(1);
     doc["relay2"] = relayController.getRelay(2);
@@ -333,6 +369,9 @@ String buildStatusJson() {
     att["enabled"] = config.attendance.enabled;
     att["source"]  = config.attendance.source;
     att["current"] = attendanceHandler.currentStateText();
+
+    // Design Ref: rcm-hub-v3.0 §4.1 — hub_* 필드 (추가만, 기존 필드 불변)
+    hubBridge.fillStatus(doc, config.hub);
 
     String output;
     serializeJson(doc, output);
@@ -418,9 +457,38 @@ String buildConfigJson() {
     att["enabled"] = config.attendance.enabled;
     att["source"]  = config.attendance.source;
 
+    // Design Ref: rcm-hub-v3.0 §3.3 #4 — hub 블록, device_key는 가림 (/api/config, UDP GET_CONFIG 공용)
+    JsonObject hub = doc.createNestedObject("hub");
+    hub["enabled"]    = config.hub.enabled;
+    hub["host"]       = config.hub.host;
+    hub["port"]       = config.hub.port;
+    hub["path"]       = config.hub.path;
+    hub["tls"]        = config.hub.tls;
+    hub["product_id"] = config.hub.productId;
+    hub["device_key"] = config.hub.deviceKey.empty() ? "" : "****";
+
     String output;
     serializeJson(doc, output);
     return output;
+}
+
+// ─── RCM Hub (rcm-hub-v3.0) ─────────────────────────
+// Design Ref: §5.2 — RcmDeckIo 바인딩. RelayController는 1 기준, pulse는 비블로킹.
+void startHub() {
+    HubBridge::Deps d;
+    d.pcOn     = [] { return pcMonitor.isPCOn(); };
+    d.getRelay = [](uint8_t r) { return relayController.getRelay(r); };
+    d.setRelay = [](uint8_t r, bool on) { relayController.setRelay(r, on); };
+    d.pulse    = [](uint8_t r, uint16_t ms) { relayController.pulse(r, ms); };
+    d.inputs   = [](JsonArray a) {
+        a.add(digitalRead(PIN_GPIO1) == HIGH);
+        a.add(digitalRead(PIN_GPIO2) == HIGH);
+        a.add(digitalRead(PIN_GPIO3) == HIGH);
+    };
+    d.ip  = [] { return networkManager.localIP().toString(); };
+    d.net = [] { return String(networkManager.activeMode() == NetMode::ETHERNET ? "eth" : "wifi"); };
+    d.log = [](const char* msg) { logger.log("HUB", msg); };
+    hubBridge.begin(config.hub, config.firmware.version, d);
 }
 
 // ─── Setup ──────────────────────────────────────────
@@ -435,6 +503,9 @@ void setup() {
 
     // Load config
     ConfigManager::load(config);
+
+    // Design Ref: rcm-hub-v3.0 §5.2 — HMAC known-answer test (handoff/TEST-VECTORS.md)
+    Serial.printf("HUB: HMAC self test %s\n", HubBridge::selfTest() ? "OK" : "FAILED");
 
     // Init STATUS LEDs early (needed for factory reset blink)
     pinMode(PIN_STATUS1, OUTPUT);
@@ -494,17 +565,28 @@ void setup() {
     // Design Ref: §5.3 — PIN_GPIO2는 SwitchMonitor.begin()에서 INPUT_PULLUP 설정
     pinMode(PIN_GPIO3, INPUT);
 
+    // G-02 — 공장 초기화 판정 뒤의 최종 설정으로 허브 동작 여부 확정 (이후 저장은 재부팅 후 반영)
+    hubActive = config.hub.enabled;
+
     // Network v2.1: single mode (ethernet OR wifi STA), non-blocking
     networkManager.setOnConnected([]() {
         Serial.println("=== Network connected - starting services ===");
 
-        // MQTT
+        // MQTT — Plan SC: FR-10, 허브 사용 시 시작 안 함 (connect()가 loop를 막아 heartbeat 끊김)
         if (!config.mqtt.broker.empty()) {
-            mqttHandler.begin(config.mqtt, config.deviceId, networkManager.getNetClient());
+            if (!hubActive) {
+                mqttHandler.begin(config.mqtt, config.deviceId, networkManager.getNetClient());
+            } else {
+                static bool mqttSkipLogged = false;
+                if (!mqttSkipLogged) { logger.log("MQTT", "disabled (RCM hub enabled)"); mqttSkipLogged = true; }
+            }
         }
 
         // NTP
         ntpSync.begin(config.ntp.server.c_str(), config.ntp.timezone.c_str());
+
+        // Design Ref: rcm-hub-v3.0 §5.2 — NTP 뒤에 허브 시작 (1회, 재접속은 라이브러리 담당)
+        if (hubActive && !hubBridge.started()) startHub();
 
         logger.log("NETWORK", networkManager.activeMode() == NetMode::ETHERNET ?
                    "Ethernet connected" : "WiFi connected");
@@ -585,10 +667,14 @@ void setup() {
 
     // Web Server
     webServer.setStatusGetter(buildStatusJson);
-    webServer.setRelayHandler([](uint8_t relay, const String& action, uint16_t duration) {
-        if (action == "on") relayController.setRelay(relay, true);
+    webServer.setRelayHandler([](uint8_t relay, const String& action, uint16_t duration) -> bool {
+        if (action == "on") {
+            if (blockPowerRelayLatch(relay, true, "HTTP")) return false;   // Plan SC: FR-09 → 409
+            relayController.setRelay(relay, true);
+        }
         else if (action == "off") relayController.setRelay(relay, false);
         else if (action == "pulse") relayController.pulse(relay, duration);
+        return true;
     });
     webServer.setConfigGetter(buildConfigJson);
     webServer.setConfigSetter([](const String& json) {
@@ -627,6 +713,7 @@ void setup() {
     webServer.setLogGetter([]() { return logger.toJson(); });
     // Design Ref: v2.6.2 §5.2 — /api/attendance/history endpoint
     webServer.setAttendanceGetter([]() { return attendanceHandler.toJson(); });
+    webServer.setHubGetter([]() { return hubBridge.toJson(config.hub); });   // rcm-hub-v3.0 — 허브 카드 상세
     webServer.setAuthChanger([](const String& curPass, const String& newUser, const String& newPass) {
         if (curPass != String(config.auth.pass.c_str())) return false;
         config.auth.user = newUser.c_str();
@@ -696,7 +783,7 @@ void setup() {
     }
 
     logger.log("SYSTEM", "Boot complete");
-    Serial.println("=== RemoteDeck PC Power Manager v2.3 ===");
+    Serial.printf("=== RemoteDeck PC Power Manager v%s ===\n", config.firmware.version.c_str());
     Serial.printf("    Mode: %s\n", config.network.mode.c_str());
     if (networkManager.isConnected()) {
         Serial.printf("    Primary IP: %s\n", networkManager.localIP().toString().c_str());
@@ -759,6 +846,8 @@ void loop() {
     scheduleManager.loop();
     udpDiscovery.loop();
     webServer.ws().loop();
+    webServer.ota().loop();   // v3.0 — OTA 성공 응답 전송 후 재부팅
+    hubBridge.loop();   // Design Ref: rcm-hub-v3.0 §5.2 — 비블로킹, 시작 전이면 no-op
 
     // Plan SC-6/7: GOT_IP + 5s stabilization 후 WebRequest 초기 sync 1회
     if (!_bootSyncedOnce && networkManager.isConnected()) {

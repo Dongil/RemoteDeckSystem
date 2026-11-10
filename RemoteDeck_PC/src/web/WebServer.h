@@ -12,7 +12,8 @@ public:
     WebSocketHandler& ws() { return _ws; }
 
     using StatusGetter = std::function<String()>;
-    using RelayHandler = std::function<void(uint8_t relay, const String& action, uint16_t duration)>;
+    // rcm-hub-v3.0 §4.3: false = 거부(409, 허브 사용 시 릴레이1 latch)
+    using RelayHandler = std::function<bool(uint8_t relay, const String& action, uint16_t duration)>;
     using ConfigGetter = std::function<String()>;
     using ConfigSetter = std::function<bool(const String& json)>;
     using ScheduleGetter = std::function<String()>;
@@ -25,6 +26,7 @@ public:
     using MQTTTestStarter = std::function<bool(const String& json)>;
     using MQTTTestGetter = std::function<String()>;
     using AttendanceGetter = std::function<String()>;
+    using HubGetter = std::function<String()>;   // rcm-hub-v3.0 — GET /api/hub
 
     void setStatusGetter(StatusGetter cb) { _getStatus = cb; }
     void setRelayHandler(RelayHandler cb) { _handleRelay = cb; }
@@ -40,6 +42,7 @@ public:
     void setMQTTTestStarter(MQTTTestStarter cb) { _startMQTTTest = cb; }
     void setMQTTTestGetter(MQTTTestGetter cb) { _getMQTTTest = cb; }
     void setAttendanceGetter(AttendanceGetter cb) { _getAttendance = cb; }
+    void setHubGetter(HubGetter cb) { _getHub = cb; }
 
     OTAHandler& ota() { return _ota; }
 
@@ -63,6 +66,7 @@ private:
     MQTTTestStarter _startMQTTTest = nullptr;
     MQTTTestGetter _getMQTTTest = nullptr;
     AttendanceGetter _getAttendance = nullptr;
+    HubGetter _getHub = nullptr;
 
     bool requireAuth(AsyncWebServerRequest* req);
     void setupStaticFiles();

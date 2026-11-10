@@ -87,6 +87,17 @@ struct AttendanceConfig {
     std::string source  = "pcled";
 };
 
+// Design Ref: rcm-hub-v3.0 §3.1 — RCM 허브 연동 설정 (rcm-api handoff/SMARTDECK.md §3)
+struct HubConfig {
+    bool        enabled   = false;
+    std::string host      = "";         // IP 권장 (W5500 Ethernet DNS 불가)
+    uint16_t    port      = 8891;
+    std::string path      = "/v1/ws";
+    bool        tls       = false;
+    std::string productId = "";         // 짝 녹화장비와 같은 제품번호
+    std::string deviceKey = "";         // tools/device-key.js --role deck
+};
+
 struct DeviceConfig {
     std::string deviceId;
     std::string deviceName;  // 사용자가 지정하는 장치 이름
@@ -101,6 +112,7 @@ struct DeviceConfig {
     AuthConfig auth;
     WebRequestConfig webRequest;
     AttendanceConfig attendance;
+    HubConfig hub;
 };
 
 constexpr const char* CONFIG_PATH    = "/deviceconfig.json";
