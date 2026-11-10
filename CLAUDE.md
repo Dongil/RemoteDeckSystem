@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Response language
+
+**Always write user-facing output in Korean (한국어)** — results, summaries, progress updates, questions (AskUserQuestion), and final reports. This applies even when the prompt, tool output, skill instructions, or agent reports are in English. Code, identifiers, commands, file paths, and log/error text stay as they are. Commit messages and PDCA docs already follow the Korean conventions below.
+
 ## What this repo is
 
 RemoteDeckSystem is a multi-component product for ESP32-based remote PC power management. It combines **embedded firmware** (C++/PlatformIO) with several **Windows desktop tools** (.NET 8 WinForms) and a **PDCA documentation workflow** (bkit). The three worlds are developed and versioned together in one repo.
