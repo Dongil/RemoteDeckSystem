@@ -257,6 +257,13 @@ public sealed class RemoteDeckClient
         req.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
     }
 
+    // v3.0.0: 타입이 맞을 때만 읽는 헬퍼 (ic-hub-v3.0 Design §4.1)
+    private static bool ReadBool(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+
+    private static string ReadString(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
     // Design Ref: §4.2 — Parse RemoteDeck_PC main.cpp buildStatusJson() shape.
     private static DeviceStatus ParseStatus(string json)
     {
@@ -296,6 +303,16 @@ public sealed class RemoteDeckClient
                 if (att.TryGetProperty("source",  out var s2)) status.AttendanceSource  = s2.GetString() ?? "";
                 if (att.TryGetProperty("current", out var c))  status.AttendanceCurrent = c.GetString() ?? "unknown";
             }
+
+            // v3.0.0: RemoteDeck_PC v3.0.0 hub_* (ic-hub-v3.0 Design §4.1) — 하위호환: hub_enabled 키가 없으면 v2.x(미지원).
+            // 키별로 타입을 확인해 다르면 그 키만 기본값 (예외로 다른 필드까지 잃지 않도록)
+            status.HubSupported  = root.TryGetProperty("hub_enabled", out _);
+            status.HubEnabled    = ReadBool(root, "hub_enabled");
+            status.HubConnected  = ReadBool(root, "hub_connected");
+            status.HubStopped    = ReadBool(root, "hub_stopped");
+            status.HubStopReason = ReadString(root, "hub_stop_reason");
+            status.HubHost       = ReadString(root, "hub_host");
+            status.HubProductId  = ReadString(root, "hub_product_id");
         }
         catch (Exception ex)
         {

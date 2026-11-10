@@ -29,6 +29,16 @@ public sealed class DeviceStatus
     public string AttendanceSource  { get; set; } = "";
     public string AttendanceCurrent { get; set; } = "unknown";
 
+    // v3.0.0: RemoteDeck_PC v3.0.0 /api/status hub_* (ic-hub-v3.0, Design §3.1)
+    // HubSupported = hub_enabled 키 존재 (v3.0 이상). 없으면 v2.x → "미지원"
+    public bool   HubSupported  { get; set; }
+    public bool   HubEnabled    { get; set; }
+    public bool   HubConnected  { get; set; }
+    public bool   HubStopped    { get; set; }
+    public string HubStopReason { get; set; } = "";   // "<code> <reason>" | "config incomplete" | ""
+    public string HubHost       { get; set; } = "";   // "host:port"
+    public string HubProductId  { get; set; } = "";
+
     public string? LastError { get; set; }
     public int ConsecutiveFailures { get; set; }
     public string? RawJson { get; set; }
@@ -47,3 +57,6 @@ public sealed class DeviceStatus
         }
     }
 }
+
+// v3.0.0: IC 그리드 기능 컬럼(재부재 자리) 표시 모드 — 재부재와 RCM 허브는 같은 현장에서 함께 쓰지 않음 (ic-hub-v3.0)
+public enum FeatureColumnMode { Attendance, Hub }

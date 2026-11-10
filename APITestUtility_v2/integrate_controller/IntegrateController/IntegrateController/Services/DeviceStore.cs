@@ -23,6 +23,9 @@ public sealed class DeviceStore
 
     public string FilePath { get; }
 
+    // v3.0.0: IC 그리드 기능 컬럼(재부재 / RCM 허브) 표시 모드. Load가 채우고 Save가 기록 (ic-hub-v3.0 Design §3.3)
+    public FeatureColumnMode FeatureColumn { get; set; } = FeatureColumnMode.Attendance;
+
     public DeviceStore(string? overridePath = null)
     {
         if (overridePath != null)
@@ -47,6 +50,9 @@ public sealed class DeviceStore
         {
             var json = File.ReadAllText(FilePath, Encoding.UTF8);
             var dto = JsonSerializer.Deserialize<StoreDto>(json, JsonOpts);
+            // v3.0.0: 필드가 없거나 모르는 값이면 재부재 (기존 파일 호환)
+            FeatureColumn = string.Equals(dto?.FeatureColumn, nameof(FeatureColumnMode.Hub), StringComparison.Ordinal)
+                ? FeatureColumnMode.Hub : FeatureColumnMode.Attendance;
             if (dto?.Devices == null) return new DeviceList();
 
             var ordered = dto.Devices.OrderBy(d => d.Order).ToList();
@@ -65,6 +71,7 @@ public sealed class DeviceStore
         var dto = new StoreDto
         {
             Version = 1,
+            FeatureColumn = FeatureColumn.ToString(),
             Devices = devices.ToList()
         };
         var json = JsonSerializer.Serialize(dto, JsonOpts);
@@ -115,6 +122,8 @@ public sealed class DeviceStore
     private sealed class StoreDto
     {
         public int Version { get; set; } = 1;
+        // v3.0.0: "Attendance" | "Hub". Version은 올리지 않음 — 구버전 IC는 모르는 필드를 무시
+        public string? FeatureColumn { get; set; }
         public List<DeviceEntry> Devices { get; set; } = new();
     }
 }
