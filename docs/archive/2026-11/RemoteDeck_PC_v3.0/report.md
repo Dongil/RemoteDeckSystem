@@ -102,9 +102,9 @@ status: completed
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| Plan | [rcm-hub-v3.0.plan.md](../../01-plan/features/rcm-hub-v3.0.plan.md) | ✅ Finalized |
-| Design | [rcm-hub-v3.0.design.md](../../02-design/features/rcm-hub-v3.0.design.md) | ✅ Finalized |
-| Check | [rcm-hub-v3.0.analysis.md](../../03-analysis/rcm-hub-v3.0.analysis.md) | ✅ Complete (98%) |
+| Plan | [plan.md](plan.md) | ✅ Finalized |
+| Design | [design.md](design.md) | ✅ Finalized |
+| Check | [analysis.md](analysis.md) | ✅ Complete (98%) |
 | Act | 현재 문서 | ✅ |
 
 ---

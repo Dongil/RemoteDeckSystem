@@ -18,7 +18,7 @@ architecture: Option C — Pragmatic Balance
 > **Author**: KDI
 > **Date**: 2026-11-09
 > **Status**: Draft
-> **Planning Doc**: [rcm-hub-v3.0.plan.md](../../01-plan/features/rcm-hub-v3.0.plan.md)
+> **Planning Doc**: [rcm-hub-v3.0.plan.md](plan.md)
 
 ---
 

@@ -7,8 +7,8 @@ author: KDI
 project: RemoteDeckSystem
 component: RemoteDeck_PC (firmware + Web UI)
 branch: v3.0-rcm-hub
-plan: docs/01-plan/features/rcm-hub-v3.0.plan.md
-design: docs/02-design/features/rcm-hub-v3.0.design.md
+plan: docs/archive/2026-11/RemoteDeck_PC_v3.0/plan.md
+design: docs/archive/2026-11/RemoteDeck_PC_v3.0/design.md
 phase: check
 matchRate: 98
 ---
