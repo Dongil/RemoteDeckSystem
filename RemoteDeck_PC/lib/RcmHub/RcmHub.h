@@ -55,6 +55,8 @@ class RcmHub {
   // Optional observer for diagnostics (e.g. a traffic log on the device web UI). Never changes behaviour.
   // kind: 'i' frame received, 'o' frame sent, 'c' socket connected, 'd' socket disconnected (text empty).
   // Called on the loop() task; keep it short and do not send from inside it.
+  // 'o' also carries the hello frame, whose auth.sig is the per-connection signature (the device key never
+  // appears). A log shown to others should mask "sig".
   using Tap = std::function<void(char kind, const char* text, size_t len)>;
   void setTap(Tap t) { _tap = t; }
 
