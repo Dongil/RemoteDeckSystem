@@ -69,6 +69,7 @@ public partial class MainForm : Form
         btnReboot.Click += BtnReboot_Click;
 
         grid.SelectionChanged += Grid_SelectionChanged;
+        grid.CellPainting += Grid_CellPainting;   // PC 컬럼 ON/OFF 점 표시
         grid.CellDoubleClick += (_, _) => BtnEdit_Click(null, EventArgs.Empty);
         grid.MouseUp += Grid_MouseUp;
         grid.DataBindingComplete += (_, _) => RefreshAllUnboundCells();
@@ -585,6 +586,35 @@ public partial class MainForm : Form
             cell.Style.ForeColor = System.Drawing.Color.Empty;
             cell.Style.SelectionForeColor = System.Drawing.Color.Empty;
         }
+    }
+
+    // PC 컬럼: 글자 앞에 ON=빨간 점, OFF=회색 점. 셀 값("ON"/"OFF")은 그대로 두고 그릴 때만 점을 덧그림.
+    // 컬럼은 ColPc.Index로만 판별 (IP 컬럼 런타임 삽입으로 인덱스가 밀리므로 고정 번호 금지)
+    private void Grid_CellPainting(object? sender, DataGridViewCellPaintingEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.ColumnIndex != ColPc.Index || e.Graphics == null) return;
+        var text = e.Value as string;
+        if (text != "ON" && text != "OFF") return;   // "?"(폴링 전) 등은 기본 그리기
+
+        bool selected = (e.State & DataGridViewElementStates.Selected) != 0;
+        e.PaintBackground(e.CellBounds, selected);
+
+        var r = e.CellBounds;
+        int d = Math.Max(8, Math.Min(12, r.Height - 10));
+        var dot = new System.Drawing.Rectangle(r.X + 6, r.Y + (r.Height - d) / 2, d, d);
+        var g = e.Graphics;
+        var oldMode = g.SmoothingMode;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using (var brush = new System.Drawing.SolidBrush(text == "ON" ? System.Drawing.Color.Red : System.Drawing.Color.Gray))
+            g.FillEllipse(brush, dot);
+        g.SmoothingMode = oldMode;
+
+        var style = e.CellStyle!;
+        var fore = selected ? style.SelectionForeColor : style.ForeColor;
+        var textRect = new System.Drawing.Rectangle(dot.Right + 5, r.Y, Math.Max(0, r.Right - dot.Right - 5), r.Height);
+        TextRenderer.DrawText(g, text, style.Font, textRect, fore,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        e.Handled = true;
     }
 
     private void AddIpColumn()
