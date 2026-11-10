@@ -20,6 +20,10 @@ public partial class MainForm : Form
     private ColumnHeader _colLogDetail = null!;
 
     private DeviceList _devices = new();
+    // v3.0.0: 재부재 컬럼 자리 표시 모드 (재부재 / RCM 허브) — 툴바 선택은 코드 생성 (ic-hub-v3.0 Design §5.3)
+    private FeatureColumnMode _featureMode = FeatureColumnMode.Attendance;
+    private ToolStripComboBox _cboFeature = null!;
+    private bool _suppressFeatureEvent;
     // IP column is added programmatically (NOT via VS Designer) — Designer keeps dropping
     // the column entry when InitializeComponent is regenerated. Keeping it in code lets
     // the layout survive any number of Designer regenerations.
@@ -51,6 +55,9 @@ public partial class MainForm : Form
         _logPoller.LogsUpdated += LogPoller_LogsUpdated;
         AddLogView();
 
+        // v3.0.0: 표시 컬럼 선택 (Designer 재생성에 날아가지 않도록 코드에서 생성)
+        AddFeatureColumnSelector();
+
         Load += MainForm_Load;
         FormClosing += MainForm_FormClosing;
 
@@ -80,6 +87,8 @@ public partial class MainForm : Form
     private void MainForm_Load(object? sender, EventArgs e)
     {
         _devices = _store.Load();
+        // v3.0.0: 저장된 표시 컬럼 복원 (없으면 재부재)
+        SetFeatureMode(_store.FeatureColumn, save: false);
         _devices.ListChanged += Devices_ListChanged;
         grid.DataSource = _devices;
 
@@ -379,7 +388,7 @@ public partial class MainForm : Form
                 row.Cells[ColDeviceName.Index].Value = "-";
                 row.Cells[ColDeviceId.Index].Value = "-";
                 row.Cells[_colIp.Index].Value = d.Ip;
-                row.Cells[ColAttendance.Index].Value = StatusFormatter.FormatAttendance(null);
+                SetFeatureCell(row, null);
                 row.Cells[ColPc.Index].Value = StatusFormatter.FormatPc(null);
                 row.Cells[ColGpio.Index].Value = StatusFormatter.FormatGpio(null);
                 row.Cells[ColFw.Index].Value = StatusFormatter.FormatFw(null);
@@ -401,7 +410,7 @@ public partial class MainForm : Form
         row.Cells[ColDeviceName.Index].Value = string.IsNullOrEmpty(status.DeviceName) ? "-" : status.DeviceName;
         row.Cells[ColDeviceId.Index].Value = string.IsNullOrEmpty(status.DeviceId) ? "-" : status.DeviceId;
         row.Cells[_colIp.Index].Value = d.Ip;
-        row.Cells[ColAttendance.Index].Value = StatusFormatter.FormatAttendance(status);
+        SetFeatureCell(row, status);
         row.Cells[ColPc.Index].Value = StatusFormatter.FormatPc(status);
         row.Cells[ColGpio.Index].Value = StatusFormatter.FormatGpio(status);
         row.Cells[ColFw.Index].Value = StatusFormatter.FormatFw(status);
@@ -460,6 +469,8 @@ public partial class MainForm : Form
         lines.AppendLine($"gpio={st.GpioString}  uptime={st.UptimeFormatted}");
         lines.AppendLine($"net_mode={st.NetMode}  fw_ver={st.FwVer}  device_name={st.DeviceName}  device_id={st.DeviceId}");
         lines.AppendLine($"mqtt_connected={st.MqttConnected}  ntp_synced={st.NtpSynced}  time={st.Time}");
+        // v3.0.0: RCM 허브 요약 (ic-hub-v3.0 Design §5.4)
+        lines.AppendLine(StatusFormatter.FormatHubDetail(st));
         lines.AppendLine($"heap_free={st.HeapFree}  heap_min={st.HeapMin}");
         lines.AppendLine($"failures={st.ConsecutiveFailures}  last_seen={st.LastSeen:yyyy-MM-dd HH:mm:ss}");
         if (st.LastError != null) lines.AppendLine($"last_error={st.LastError}");
@@ -502,6 +513,78 @@ public partial class MainForm : Form
     private void UpdateStatusMessage(string text)
     {
         statusMessage.Text = text;
+    }
+
+    // ─── v3.0.0: 기능 컬럼(재부재 / RCM 허브) 전환 — ic-hub-v3.0 ────────
+
+    private void AddFeatureColumnSelector()
+    {
+        _cboFeature = new ToolStripComboBox
+        {
+            Name = "cboFeatureColumn",
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Alignment = ToolStripItemAlignment.Right,
+            AutoSize = false,
+            Width = 110,
+            ToolTipText = "재부재 컬럼 자리에 표시할 항목 (재부재와 RCM 허브는 함께 쓰지 않음)",
+        };
+        _cboFeature.Items.AddRange(new object[] { "재부재", "RCM 허브" });
+        _cboFeature.SelectedIndex = 0;
+        _cboFeature.SelectedIndexChanged += (_, _) =>
+        {
+            if (_suppressFeatureEvent) return;
+            SetFeatureMode(_cboFeature.SelectedIndex == 1 ? FeatureColumnMode.Hub : FeatureColumnMode.Attendance, save: true);
+        };
+        var label = new ToolStripLabel("표시 컬럼:") { Alignment = ToolStripItemAlignment.Right };
+        // Right 정렬 항목은 뒤에서부터 배치되므로 콤보를 먼저 추가해야 "표시 컬럼: [콤보]" 순서가 됨
+        toolStrip.Items.Add(_cboFeature);
+        toolStrip.Items.Add(label);
+    }
+
+    private void SetFeatureMode(FeatureColumnMode mode, bool save)
+    {
+        _featureMode = mode;
+        _suppressFeatureEvent = true;
+        _cboFeature.SelectedIndex = mode == FeatureColumnMode.Hub ? 1 : 0;
+        _suppressFeatureEvent = false;
+
+        ColAttendance.HeaderText = mode == FeatureColumnMode.Hub ? "RCM 허브" : "재부재";
+        ColAttendance.ToolTipText = mode == FeatureColumnMode.Hub
+            ? "RCM 허브 연결 상태 (RemoteDeck_PC v3.0 이상)"
+            : "재부재 상태";
+        RefreshAllUnboundCells();
+        RefreshDetailPanel();
+
+        if (!save) return;
+        _store.FeatureColumn = mode;
+        try
+        {
+            _store.Save(_devices);
+            UpdateStatusMessage($"표시 컬럼: {(mode == FeatureColumnMode.Hub ? "RCM 허브" : "재부재")}");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusMessage("표시 컬럼 저장 실패: " + ex.Message);
+        }
+    }
+
+    // 셀 세팅 2곳(폴링 결과 있음/없음)에서 호출. 접근은 ColAttendance.Index로만 (Designer 3중 방어선)
+    private void SetFeatureCell(DataGridViewRow row, DeviceStatus? status)
+    {
+        var cell = row.Cells[ColAttendance.Index];
+        if (_featureMode == FeatureColumnMode.Hub)
+        {
+            cell.Value = StatusFormatter.FormatHub(status);
+            var fg = StatusFormatter.HubColor(status);
+            cell.Style.ForeColor = fg;
+            cell.Style.SelectionForeColor = fg;   // 선택 행에서도 색 유지
+        }
+        else
+        {
+            cell.Value = StatusFormatter.FormatAttendance(status);
+            cell.Style.ForeColor = System.Drawing.Color.Empty;
+            cell.Style.SelectionForeColor = System.Drawing.Color.Empty;
+        }
     }
 
     private void AddIpColumn()
