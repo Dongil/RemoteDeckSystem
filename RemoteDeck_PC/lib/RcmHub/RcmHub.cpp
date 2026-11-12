@@ -103,6 +103,12 @@ void RcmHub::onText(const char* text, size_t len) {
     _backoffMs = 500;
     _ws.setReconnectInterval(_backoffMs);
     Serial.printf("[rcm] ready, room %s\n", (const char*)(in["pair"]["room"] | ""));
+    _peerIp = (const char*)(in["pair"]["peer"]["regIp"] | "");  // before sendFull: the full state carries peer.ip
+    _caps = ",";
+    for (JsonVariant c : in["caps"].as<JsonArray>()) {
+      _caps += (const char*)(c | "");
+      _caps += ",";
+    }
     sendFull();
     return;
   }

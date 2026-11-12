@@ -6,6 +6,7 @@ void RcmDeck::begin(const RcmHubConfig& cfg, const RcmDeckIo& io) {
   _lastRelays = 0;
   for (uint8_t r = 1; r <= _io.relayCount; r++)
     if (_io.getRelay(r)) _lastRelays |= 1 << (r - 1);
+  _lastPeer = _io.peerNet ? _io.peerNet() : "";
 
   _hub.on("pc.powerOn", [this](RcmReq& req) { startPress(req, true); });
   _hub.on("pc.forceOff", [this](RcmReq& req) { startPress(req, false); });
@@ -48,6 +49,17 @@ void RcmDeck::fullState(JsonObject s) {
   if (_io.fw.length()) s["fw"] = _io.fw.substring(0, 32);
   if (_io.ip) s["ip"] = _io.ip();
   if (_io.net) s["net"] = _io.net();
+  if (peerOn()) addPeer(s, _io.peerNet());
+}
+
+// peer only to a hub that lists it in welcome.caps (a v1.0 hub would reject the whole deck.state)
+bool RcmDeck::peerOn() { return _io.peerNet && _hub.hubHas("peer"); }
+
+// v1.1.0: deck.state.peer {net, ip} - SmartDeck's ping of the paired PC
+void RcmDeck::addPeer(JsonObject s, const char* net) {
+  JsonObject p = s.createNestedObject("peer");
+  p["net"] = net;
+  if (_hub.peerIp().length()) p["ip"] = _hub.peerIp().substring(0, 64);
 }
 
 void RcmDeck::startPress(RcmReq& req, bool wantOn) {
@@ -89,7 +101,7 @@ void RcmDeck::loop() {
   _hub.loop();
 
   // report changes as they happen (the hub has no other way to know the PC power state)
-  StaticJsonDocument<256> patch;
+  StaticJsonDocument<384> patch;
   bool pc = _io.pcOn();
   if (pc != _lastPc) {
     _lastPc = pc;
@@ -102,6 +114,13 @@ void RcmDeck::loop() {
     _lastRelays = bits;
     JsonArray a = patch.createNestedArray("relays");
     for (uint8_t r = 1; r <= _io.relayCount; r++) a.add((bits >> (r - 1)) & 1 ? true : false);
+  }
+  if (peerOn()) {
+    const char* net = _io.peerNet();
+    if (_lastPeer != net) {
+      _lastPeer = net;
+      addPeer(patch.isNull() ? patch.to<JsonObject>() : patch.as<JsonObject>(), net);  // empty doc is not an object yet
+    }
   }
   if (patch.size()) _hub.report(patch.as<JsonObjectConst>());
 

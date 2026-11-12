@@ -73,6 +73,8 @@ void HubBridge::begin(const HubConfig& cfg, const std::string& fw, const Deps& d
     io.relayCount = 2;
     io.powerRelay = 1;
     io.fw = fw.c_str();
+    // v3.1.0 rcm-power-diag: 짝 PC ping 결과 → deck.state.peer (허브의 부팅 실패 원인 추정용)
+    io.peerNet = [this]() { return peerNet(); };
 
     // 송수신 내역 수집 (라이브러리 동작에는 영향 없음)
     _deck.hub().setTap([this](char kind, const char* text, size_t len) { onTap(kind, text, len); });
@@ -98,6 +100,77 @@ void HubBridge::loop() {
         logMsg(String("stopped: ") + _deck.hub().stopReason());
     }
     _lastStopped = stopped;
+
+    updatePeerProbe();
+}
+
+// ─── v3.1.0 rcm-power-diag: 짝 PC ping ────────────────
+
+const char* HubBridge::peerNet() const {
+    if (_pingIp.length() == 0) return "unknown";
+    switch (_peerState.load()) {
+        case 1: return "up";
+        case 2: return "down";
+        default: return "unknown";
+    }
+}
+
+// ping 태스크에서 호출됨 — atomic만 건드림
+void HubBridge::onPingSuccess(esp_ping_handle_t, void* args) {
+    auto* self = static_cast<HubBridge*>(args);
+    self->_peerMisses = 0;
+    self->_peerReplies++;
+    self->_peerState = 1;
+}
+
+void HubBridge::onPingTimeout(esp_ping_handle_t, void* args) {
+    auto* self = static_cast<HubBridge*>(args);
+    uint8_t m = self->_peerMisses.load();
+    if (m < 255) self->_peerMisses = m + 1;
+    if (m + 1 >= 3) self->_peerState = 2;   // 연속 3회(약 30초) 무응답
+}
+
+// 짝 IP(welcome마다 갱신)가 바뀌면 세션을 다시 만든다. loop에서 호출, 비블로킹.
+void HubBridge::updatePeerProbe() {
+    const String& ip = _deck.hub().peerIp();
+    if (ip == _pingIp) return;
+    if (_ping) {
+        esp_ping_stop(_ping);
+        esp_ping_delete_session(_ping);
+        _ping = nullptr;
+    }
+    _pingIp = ip;
+    _peerState = 0;
+    _peerMisses = 0;
+    _peerReplies = 0;
+    if (ip.length() == 0) {
+        logMsg("peer ping off (no paired PC IP)");
+        return;
+    }
+    ip_addr_t target;
+    if (!ipaddr_aton(ip.c_str(), &target)) {
+        logMsg(String("peer ping: bad IP ") + ip);
+        return;
+    }
+    esp_ping_config_t cfg = ESP_PING_DEFAULT_CONFIG();
+    cfg.target_addr = target;
+    cfg.count = ESP_PING_COUNT_INFINITE;
+    cfg.interval_ms = 10000;
+    cfg.timeout_ms = 1000;
+    cfg.data_size = 32;
+    esp_ping_callbacks_t cbs = {};
+    cbs.cb_args = this;
+    cbs.on_ping_success = onPingSuccess;
+    cbs.on_ping_timeout = onPingTimeout;
+    if (esp_ping_new_session(&cfg, &cbs, &_ping) != ESP_OK || esp_ping_start(_ping) != ESP_OK) {
+        logMsg(String("peer ping start failed: ") + ip);
+        if (_ping) {
+            esp_ping_delete_session(_ping);
+            _ping = nullptr;
+        }
+        return;
+    }
+    logMsg(String("peer ping -> ") + ip + " (10s)");
 }
 
 // ─── 송수신 내역 ───────────────────────────────────────
@@ -244,6 +317,10 @@ String HubBridge::toJson(const HubConfig& cfg) {
     doc["last_cmd"] = _lastCmd;
     doc["last_cmd_ok"] = _lastCmdOk;
     doc["last_cmd_s"] = _lastCmdMs ? (int32_t)((now - _lastCmdMs) / 1000) : -1;
+    // v3.1.0: 짝 PC ping 상태 (점검용, 웹 UI는 표시하지 않음)
+    doc["peer_ip"] = _pingIp;
+    doc["peer_net"] = peerNet();
+    doc["peer_replies"] = _peerReplies.load();
 
     JsonArray arr = doc.createNestedArray("log");
     for (uint8_t k = 0; k < _count; k++) {
