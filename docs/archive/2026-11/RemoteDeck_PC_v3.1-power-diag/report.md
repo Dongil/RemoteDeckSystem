@@ -91,9 +91,9 @@ status: completed
 
 | Phase | Document | Status |
 |-------|----------|--------|
-| Plan | [rcm-power-diag.plan.md](../../01-plan/features/rcm-power-diag.plan.md) | ✅ v0.2 |
-| Design | [rcm-power-diag.design.md](../../02-design/features/rcm-power-diag.design.md) | ✅ v0.2 (9.1 caps) |
-| Check | [rcm-power-diag.analysis.md](../../03-analysis/rcm-power-diag.analysis.md) | ✅ 96% |
+| Plan | [plan.md](plan.md) | ✅ v0.2 |
+| Design | [design.md](design.md) | ✅ v0.2 (9.1 caps) |
+| Check | [analysis.md](analysis.md) | ✅ 96% |
 | Report | 현재 문서 | ✅ |
 
 ---

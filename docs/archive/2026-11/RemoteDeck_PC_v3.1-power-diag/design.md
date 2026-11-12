@@ -14,7 +14,7 @@ status: draft
 
 > **Summary**: 에이전트의 `os_updating` 단계로 허브가 업데이트 종료를 끝까지(상한 3시간) 기다리고, deck이 짝 PC에 보내는 ping 결과(`deck.state.peer`)와 에이전트 접속 여부로 허브가 부팅 실패 원인을 추정해 `power.diag`에 남긴다. 실패 뒤 30분 동안 관찰해 늦은 부팅이면 오류를 해제한다.
 >
-> **Planning Doc**: [rcm-power-diag.plan.md](../../01-plan/features/rcm-power-diag.plan.md)
+> **Planning Doc**: [plan.md](plan.md)
 
 ---
 

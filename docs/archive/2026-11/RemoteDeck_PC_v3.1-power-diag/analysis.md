@@ -7,8 +7,8 @@ author: KDI
 project: RemoteDeckSystem (+ rcm-api)
 component: rcm-api v1.1.0 (규격·허브·에이전트 참조·시뮬레이터) + RemoteDeck_PC v3.1.0 (deck)
 branch: rcm-api power-diag-v1.1 (721035c, a14b148) / RemoteDeckSystem v3.1-power-diag
-plan: docs/01-plan/features/rcm-power-diag.plan.md
-design: docs/02-design/features/rcm-power-diag.design.md
+plan: docs/archive/2026-11/RemoteDeck_PC_v3.1-power-diag/plan.md
+design: docs/archive/2026-11/RemoteDeck_PC_v3.1-power-diag/design.md
 phase: check
 matchRate: 96
 ---
