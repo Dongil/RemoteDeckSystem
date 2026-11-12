@@ -18,6 +18,10 @@ struct RcmDeckIo {
   std::function<String()> ip;                              // current LAN IP
   std::function<String()> net;                             // "eth" | "wifi"
   std::function<void()> reboot;                            // ESP.restart
+  // v1.1.0 optional: ping result for the paired PC (hub().peerIp()): "up" | "down" | "unknown".
+  // Reported as deck.state.peer so the hub can tell "OS not up" from "agent not running" after a power-on.
+  // Sent only to a hub that lists "peer" in welcome.caps (v1.1+). Must not block (ping elsewhere, return the last result).
+  std::function<const char*()> peerNet;
   uint8_t relayCount = 2;
   uint8_t powerRelay = 1;                                  // relay wired to the PC power button
   String fw;
@@ -31,6 +35,8 @@ class RcmDeck {
 
  private:
   void fullState(JsonObject s);
+  void addPeer(JsonObject s, const char* net);
+  bool peerOn();
   void startPress(RcmReq& req, bool wantOn);
   void finishPress(bool ok);
 
@@ -38,6 +44,7 @@ class RcmDeck {
   RcmDeckIo _io;
   bool _lastPc = false;
   uint8_t _lastRelays = 0;  // bit i = relay i+1
+  String _lastPeer;         // last reported peer.net
   bool _rebootPending = false;
   uint32_t _rebootAt = 0;
 

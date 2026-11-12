@@ -49,6 +49,12 @@ class RcmHub {
   // true after the hub closed with 4001 (bad key/productid), 4009 (another device with this id) or 4010
   bool stopped() const { return _stopped; }
   const String& stopReason() const { return _stopReason; }
+  // v1.1.0: registered IP of the paired device in this room (welcome pair.peer.regIp), "" if none.
+  // The SmartDeck pings it to tell the hub whether the PC's OS is up (deck.state.peer).
+  const String& peerIp() const { return _peerIp; }
+  // v1.1.0: optional features this hub accepts (welcome.caps), e.g. "peer". A v1.0 hub sends none and rejects
+  // a state report with unknown keys as a whole, so only send optional keys the hub has listed.
+  bool hubHas(const char* cap) const { return _caps.indexOf(String(",") + cap + ",") >= 0; }
 
   void on(const char* op, ReqHandler h) { _handlers[op] = h; }
 
@@ -87,6 +93,8 @@ class RcmHub {
   bool _ready = false;
   bool _stopped = false;
   String _stopReason;
+  String _peerIp;
+  String _caps;  // ",peer," (welcome.caps joined with commas)
   uint32_t _rev = 0;
   uint32_t _backoffMs = 500;
 };

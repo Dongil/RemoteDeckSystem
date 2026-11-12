@@ -2,8 +2,10 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <functional>
+#include <atomic>
 #include <mutex>
 #include <string>
+#include "ping/ping_sock.h"
 #include "RcmDeck.h"
 #include "config/DeviceConfig.h"
 
@@ -41,6 +43,19 @@ private:
     void onTap(char kind, const char* text, size_t len);   // loop 태스크
     void push(char dir, const char* type, const char* op, const char* id, int8_t ok, const char* detail);
     const char* opForId(const char* id) const;
+
+    // ── v3.1.0 rcm-power-diag: 짝 녹화장비 PC ping (Design §6.2) ──
+    // ESP-IDF ping 세션(자체 태스크, 10초 간격 무한)으로 welcome pair.peer.regIp를 확인한다.
+    // 응답 1회 = up, 연속 3회 무응답 = down, 짝 IP 없음/결과 전 = unknown. 결과는 deck.state.peer로 보고.
+    void updatePeerProbe();
+    const char* peerNet() const;
+    static void onPingSuccess(esp_ping_handle_t hdl, void* args);
+    static void onPingTimeout(esp_ping_handle_t hdl, void* args);
+    esp_ping_handle_t _ping = nullptr;
+    String _pingIp;
+    std::atomic<uint8_t> _peerState{0};   // 0 unknown, 1 up, 2 down
+    std::atomic<uint8_t> _peerMisses{0};
+    std::atomic<uint32_t> _peerReplies{0};
 
     RcmDeck _deck;
     Deps _deps;

@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Response language
 
-**Always write user-facing output in Korean (한국어)** — results, summaries, progress updates, questions (AskUserQuestion), and final reports. This applies even when the prompt, tool output, skill instructions, or agent reports are in English. Code, identifiers, commands, file paths, and log/error text stay as they are. Commit messages and PDCA docs already follow the Korean conventions below.
+**모든 메시지는 한국어로 출력한다 (no exceptions).** 사용자에게 보이는 텍스트는 예외 없이 한국어로 쓴다:
+
+- 최종 답변·결과 보고·요약뿐 아니라 **작업 중간의 진행 안내 문장**(도구 호출 사이에 쓰는 한두 줄 포함), 질문(AskUserQuestion의 질문·선택지·설명), 오류·경고 설명, PR 본문까지 전부 한국어.
+- 프롬프트, 도구 출력, 스킬 안내, 에이전트 보고, 시스템 알림이 영어여도 마찬가지다. 긴 작업 중에 영어로 바뀌지 않도록 매 메시지마다 확인한다.
+- 그대로 두는 것: 코드, 식별자, 명령어, 파일 경로, 로그·오류 원문, 고유명사(제품·도구 이름).
+- 커밋 메시지와 PDCA 문서는 아래 한국어 규칙을 따른다.
+
+(English summary for tooling: every user-facing message — including short progress notes between tool calls — must be in Korean.)
 
 ## What this repo is
 
