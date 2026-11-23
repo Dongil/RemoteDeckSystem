@@ -5,6 +5,7 @@
 | [RemoteDeck_PC_v3.0](RemoteDeck_PC_v3.0/) | Completed (RCM 허브 deck 연동) | RemoteDeck_PC (firmware + Web UI) | 98% | 2026-11-10 |
 | [RemoteDeck_PC_v3.0-IC](RemoteDeck_PC_v3.0-IC/) | Completed (IC RCM 허브 컬럼) | IntegrateController (client) | 98% | 2026-11-10 |
 | [RemoteDeck_PC_v3.1-power-diag](RemoteDeck_PC_v3.1-power-diag/) | Completed (업데이트 종료 대기 + 부팅 실패 진단) | rcm-api v1.1.0 + RemoteDeck_PC v3.1.0 | 96% | 2026-11-12 |
+| [rcm-api_v1.3-multi-encoder](rcm-api_v1.3-multi-encoder/) | Completed (멀티인코더 채널 녹화 + SmartDeck 없이도 맞는 전원 판단) | rcm-api v1.3.0 | 95% | 2026-11-23 |
 
 ## Summaries
 
