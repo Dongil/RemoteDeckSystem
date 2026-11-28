@@ -215,7 +215,7 @@ partial class MainForm
 		// ColPc
 		//
 		ColPc.FillWeight = 12F;
-		ColPc.HeaderText = "PC";
+		ColPc.HeaderText = "PC LED";
 		ColPc.Name = "ColPc";
 		ColPc.ReadOnly = true;
 		// 

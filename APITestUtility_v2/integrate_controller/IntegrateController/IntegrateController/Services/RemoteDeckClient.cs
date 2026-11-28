@@ -236,6 +236,53 @@ public sealed class RemoteDeckClient
         }
     }
 
+    // ic-pc-power Design §2 — 비상 켜기: POST /api/relay 릴레이 펄스 (RemoteDeck_PC v2.2+).
+    // RCM 허브 사용 중에도 펄스는 허용(409는 latch 거부일 때만). 짧은 펄스는 켜진 PC를 종료시키므로 호출 전 확인은 UI 몫.
+    public async Task<RestResult<bool>> PulseRelayAsync(DeviceEntry device, int relay, int durationMs, CancellationToken ct)
+    {
+        var url = $"{device.BaseUrl}/api/relay";
+        var json = JsonSerializer.Serialize(new { cmd = "pulse", relay, duration = durationMs });
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        AttachAuth(req, device);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(device.TimeoutMs > 0 ? device.TimeoutMs : 2000);
+
+        try
+        {
+            using var resp = await Http.SendAsync(req, cts.Token).ConfigureAwait(false);
+            if (resp.IsSuccessStatusCode)
+                return new RestResult<bool>(true, true, (int)resp.StatusCode, null);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                return new RestResult<bool>(false, false, 401, "인증 실패 (401)");
+            var body = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+            var err = $"HTTP {(int)resp.StatusCode}";
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var msg = ReadString(doc.RootElement, "error");
+                if (msg.Length > 0) err += ": " + msg;
+            }
+            catch (JsonException) { }
+            return new RestResult<bool>(false, false, (int)resp.StatusCode, err);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return new RestResult<bool>(false, false, 0, "timeout");
+        }
+        catch (HttpRequestException ex)
+        {
+            return new RestResult<bool>(false, false, 0, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return new RestResult<bool>(false, false, 0, ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
     private static bool IsRebootInProgress(HttpRequestException ex)
     {
         // Distinguish "device rebooted mid-response" from "device unreachable".

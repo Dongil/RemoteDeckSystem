@@ -7,8 +7,12 @@
 | [RemoteDeck_PC_v3.1-power-diag](RemoteDeck_PC_v3.1-power-diag/) | Completed (업데이트 종료 대기 + 부팅 실패 진단) | rcm-api v1.1.0 + RemoteDeck_PC v3.1.0 | 96% | 2026-11-12 |
 | [rcm-api_v1.3-multi-encoder](rcm-api_v1.3-multi-encoder/) | Completed (멀티인코더 채널 녹화 + SmartDeck 없이도 맞는 전원 판단) | rcm-api v1.3.0 | 95% | 2026-11-23 |
 | [rcm-api_v1.4-led-ignore](rcm-api_v1.4-led-ignore/) | Completed (현장 대응: SmartDeck Origin 수정 + PC LED 없이 전원 운영) | rcm-api v1.3.1·v1.4.0 + RemoteDeck_PC v3.1.1 | 96% | 2026-11-28 |
+| [RemoteDeck_PC_v3.1-IC-pc-power](RemoteDeck_PC_v3.1-IC-pc-power/) | Completed (IC "PC 전원" 비상 켜기 버튼) | IntegrateController (client) | 97% | 2026-11-28 |
 
 ## Summaries
+
+### RemoteDeck_PC_v3.1-IC-pc-power
+PDCA feature `ic-pc-power`. 사용자 요청 "RCM 허브 표시일 때 'PC 전원' 컬럼에 실별 '켜기' 버튼, 누르면 relay 1 펄스 — 비상시 강제로 켜는 목적". IntegrateController에 `DataGridViewButtonColumn`을 코드로 생성(RCM 허브 컬럼 오른쪽, 허브 모드에서만 보임, 온라인 "켜기"/오프라인 "-"), 누르면 확인 창(방·IP·PC LED, LED 켜짐이면 "켜진 PC는 종료됨" 경고, 기본 "아니요", 허브 장비면 "허브를 거치지 않고 직접") 뒤 `POST /api/relay {"cmd":"pulse","relay":1,"duration":500}`(펌웨어 v2.2+, 허브 사용 중에도 펄스 허용 → **펌웨어 변경 없음**). 진행 중 재요청 무시, 버튼 더블클릭은 편집 창 안 엶. 실기 피드백: 버튼이 셀과 같은 크기라 버튼인지 모름 → 입체 버튼 + 고정 폭 80px + 셀 안쪽 여백, "PC" 컬럼은 "PC LED"로(모든 모드). 시험: 목 장비 4종(200/401/409/timeout)을 빌드 어셈블리로 호출 + 사용자 실기(켜기·끄기 동작). 빌드 0/0, matchRate 97%. 관련 [[RemoteDeck_PC_v3.0-IC]] · [[project_winforms_designer]].
 
 ### rcm-api_v1.4-led-ignore
 PDCA feature `rcm-led-ignore`. 현장 적용 중 장애 2건을 같은 날 대응. (1) **SmartDeck이 운영 허브에 접속 못 함**: arduinoWebSockets 기본 `Origin: file://` → `allowedOrigins` 허브가 업그레이드 전 401(허브 기록 없음, 덱 "연결 중"). 현장은 서버 `allowedOrigins`에 `"file://"`로 즉시 복구, 근본 수정 `RcmHub::begin()` `setExtraHeaders("")` → rcm-api v1.3.1(PR #26, 규격 변경 없음) + RemoteDeck_PC v3.1.1(PR #12, 배포 파일 PR #13). conformance 검사 허브도 운영처럼 `allowedOrigins` 설정. (2) **PC LED 인식 불가 방은 끈 뒤 다시 켤 수 없음**(LED 켜짐 고정: 웹 계속 "켜짐", `power.on` noop + 덱도 거부 / 꺼짐 고정: 재시도 누름이 부팅 중 PC를 끔) → rcm-api v1.4.0(PR #27) 허브 설정 `power.ignoreLed`(전체/방 목록): 녹화장비 접속 여부로만 on/off, 켜기는 `deck.relay.pulse` 한 번 + 에이전트 접속 확인(재시도 없음), 덱 ping 응답이면 누르지 않음(`no_agent`), 끄기는 정상 종료 → 끊김, 초과 시 길게 누름, 새 진단 `no_boot`, 규격 `power.ledIgnored`. **덱 펌웨어 변경 없음**. 시험 112/112(신규 8, 기존 무수정). matchRate 96%. 교훈: 시험 환경이 운영 설정(`allowedOrigins`)과 달라 문제를 못 봄. 공지 rcm-api #28. 관련 [[rcm-api_v1.3-multi-encoder]] · [[project_rcm_hub_virtual_test]].
