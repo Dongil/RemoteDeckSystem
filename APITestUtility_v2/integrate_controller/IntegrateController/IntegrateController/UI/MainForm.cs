@@ -28,6 +28,9 @@ public partial class MainForm : Form
     // the column entry when InitializeComponent is regenerated. Keeping it in code lets
     // the layout survive any number of Designer regenerations.
     private DataGridViewTextBoxColumn _colIp = null!;
+    // ic-pc-power: 비상 켜기 버튼 컬럼 (RCM 허브 표시 모드에서만, 코드 생성 — Designer 3중 방어선)
+    private DataGridViewButtonColumn _colPcPower = null!;
+    private readonly HashSet<string> _pulsing = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DeviceStatus> _statusById =
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _authIssueById =
@@ -45,6 +48,7 @@ public partial class MainForm : Form
 
         // IP column added in code (never via Designer) so it survives regeneration.
         AddIpColumn();
+        AddPcPowerColumn();   // ColAttendance 다음 (IP 컬럼 삽입 뒤에 호출)
 
         _poller = new DevicePoller(_client);
         _poller.StatusUpdated += Poller_StatusUpdated;
@@ -70,7 +74,12 @@ public partial class MainForm : Form
 
         grid.SelectionChanged += Grid_SelectionChanged;
         grid.CellPainting += Grid_CellPainting;   // PC 컬럼 ON/OFF 점 표시
-        grid.CellDoubleClick += (_, _) => BtnEdit_Click(null, EventArgs.Empty);
+        grid.CellDoubleClick += (_, e) =>
+        {
+            if (e.ColumnIndex == _colPcPower.Index) return;   // 켜기 버튼 연타가 편집 창을 열지 않도록
+            BtnEdit_Click(null, EventArgs.Empty);
+        };
+        grid.CellContentClick += Grid_CellContentClick;
         grid.MouseUp += Grid_MouseUp;
         grid.DataBindingComplete += (_, _) => RefreshAllUnboundCells();
 
@@ -390,6 +399,7 @@ public partial class MainForm : Form
                 row.Cells[ColDeviceId.Index].Value = "-";
                 row.Cells[_colIp.Index].Value = d.Ip;
                 SetFeatureCell(row, null);
+                SetPcPowerCell(row, null);
                 row.Cells[ColPc.Index].Value = StatusFormatter.FormatPc(null);
                 row.Cells[ColGpio.Index].Value = StatusFormatter.FormatGpio(null);
                 row.Cells[ColFw.Index].Value = StatusFormatter.FormatFw(null);
@@ -412,6 +422,7 @@ public partial class MainForm : Form
         row.Cells[ColDeviceId.Index].Value = string.IsNullOrEmpty(status.DeviceId) ? "-" : status.DeviceId;
         row.Cells[_colIp.Index].Value = d.Ip;
         SetFeatureCell(row, status);
+        SetPcPowerCell(row, status);
         row.Cells[ColPc.Index].Value = StatusFormatter.FormatPc(status);
         row.Cells[ColGpio.Index].Value = StatusFormatter.FormatGpio(status);
         row.Cells[ColFw.Index].Value = StatusFormatter.FormatFw(status);
@@ -553,6 +564,7 @@ public partial class MainForm : Form
         ColAttendance.ToolTipText = mode == FeatureColumnMode.Hub
             ? "RCM 허브 연결 상태 (RemoteDeck_PC v3.0 이상)"
             : "재부재 상태";
+        _colPcPower.Visible = mode == FeatureColumnMode.Hub;   // ic-pc-power FR-02
         RefreshAllUnboundCells();
         RefreshDetailPanel();
 
@@ -585,6 +597,103 @@ public partial class MainForm : Form
             cell.Value = StatusFormatter.FormatAttendance(status);
             cell.Style.ForeColor = System.Drawing.Color.Empty;
             cell.Style.SelectionForeColor = System.Drawing.Color.Empty;
+        }
+    }
+
+    // ─── ic-pc-power: 비상 켜기 (릴레이1 펄스) ─────────────────────
+
+    private void AddPcPowerColumn()
+    {
+        _colPcPower = new DataGridViewButtonColumn
+        {
+            Name = "ColPcPower",
+            HeaderText = "PC 전원",
+            ToolTipText = "비상 켜기: 장비에 릴레이1 짧은 펄스(PC 전원 버튼). 켜져 있는 PC는 종료되니 주의",
+            UseColumnTextForButtonValue = false,   // 행마다 "켜기" / "-"
+            // 버튼임이 보이도록: 입체 기본 버튼 + 고정 폭 컬럼 + 셀 안쪽 여백 → 셀보다 작은 버튼이 가운데 (실기 피드백)
+            FlatStyle = FlatStyle.Standard,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+            Width = 80,
+            MinimumWidth = 80,
+            Resizable = DataGridViewTriState.False,
+            ReadOnly = true,
+            Visible = false,
+        };
+        _colPcPower.DefaultCellStyle.Padding = new Padding(12, 2, 12, 2);
+        _colPcPower.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        // RCM 허브(ColAttendance 자리) 바로 오른쪽. 위치는 IndexOf로만 구함 (고정 번호 금지)
+        int idx = grid.Columns.IndexOf(ColAttendance);
+        grid.Columns.Insert(idx >= 0 ? idx + 1 : grid.Columns.Count, _colPcPower);
+    }
+
+    private void SetPcPowerCell(DataGridViewRow row, DeviceStatus? status)
+    {
+        row.Cells[_colPcPower.Index].Value = status?.Online == true ? "켜기" : "-";
+    }
+
+    private async void Grid_CellContentClick(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.RowIndex < 0 || e.RowIndex >= _devices.Count || e.ColumnIndex != _colPcPower.Index) return;
+        await PcPowerClickAsync(_devices[e.RowIndex]).ConfigureAwait(true);
+    }
+
+    private async Task PcPowerClickAsync(DeviceEntry device)
+    {
+        var name = DisplayName(device);
+        if (_pulsing.Contains(device.Id))
+        {
+            UpdateStatusMessage($"켜기 요청 진행 중: {name}");
+            return;
+        }
+        if (!_statusById.TryGetValue(device.Id, out var st) || !st.Online)
+        {
+            UpdateStatusMessage($"오프라인 장비라 켜기를 보낼 수 없음: {name} ({device.Ip})");
+            return;
+        }
+
+        var msg = new System.Text.StringBuilder();
+        msg.AppendLine($"[{name}] ({device.Ip})");
+        msg.AppendLine();
+        msg.AppendLine("PC 전원 버튼을 짧게 누릅니다 (릴레이1 펄스 0.5초).");
+        msg.AppendLine($"현재 PC LED: {(st.PcOn ? "ON (켜짐)" : "OFF (꺼짐)")}");
+        if (st.PcOn)
+        {
+            msg.AppendLine();
+            msg.AppendLine("⚠ PC가 켜져 있으면 이 펄스로 Windows가 종료됩니다.");
+            msg.AppendLine("   LED 고장으로 실제로는 꺼져 있을 때만 누르세요.");
+        }
+        if (st.HubConnected)
+        {
+            msg.AppendLine();
+            msg.AppendLine("RCM 허브를 거치지 않고 장비에 직접 보냅니다.");
+        }
+        msg.AppendLine();
+        msg.Append("켜기 펄스를 보낼까요?");
+        var res = MessageBox.Show(this, msg.ToString(), "PC 전원 비상 켜기",
+            MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+        if (res != DialogResult.Yes) return;
+
+        _pulsing.Add(device.Id);
+        try
+        {
+            UpdateStatusMessage($"켜기 펄스 전송 중: {name}...");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var result = await _client.PulseRelayAsync(device, 1, 500, CancellationToken.None).ConfigureAwait(true);
+            sw.Stop();
+            if (result.Ok)
+            {
+                UpdateStatusMessage($"켜기 펄스 전송됨: {name} (RTT {sw.ElapsedMilliseconds}ms)");
+            }
+            else
+            {
+                UpdateStatusMessage($"켜기 펄스 실패: {name} — {result.Error}");
+                MessageBox.Show(this, $"켜기 펄스 실패: {result.Error}", "PC 전원 비상 켜기",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        finally
+        {
+            _pulsing.Remove(device.Id);
         }
     }
 
