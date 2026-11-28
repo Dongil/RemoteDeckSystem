@@ -35,6 +35,10 @@ void RcmHub::begin(const RcmHubConfig& cfg, StateFn fullState) {
   _backoffMs = 500;
   if (cfg.tls) _ws.beginSSL(cfg.host.c_str(), cfg.port, cfg.path.c_str());
   else _ws.begin(cfg.host, cfg.port, cfg.path);
+  // No Origin header. arduinoWebSockets sends "Origin: file://" by default, and a hub with allowedOrigins
+  // (handoff/SERVER.md: set it in production) refuses it with 401 before the upgrade, so the SmartDeck never
+  // connects while the recorder agent (no Origin) does. Origin is for browsers; devices authenticate by key.
+  _ws.setExtraHeaders("");
   _ws.onEvent([this](WStype_t t, uint8_t* p, size_t l) { onWs(t, p, l); });
   _ws.setReconnectInterval(_backoffMs);
   // our own ping as well: notices a dead hub / half-open TCP within ~2 x 15 s
